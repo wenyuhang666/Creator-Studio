@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
 function readHostTargetTriple() {
@@ -40,4 +40,7 @@ run(
 );
 
 // 复制编译后的文件到目标位置
-run("cp", [path.join("packages", "ai-engine", "dist", "cli.js"), outPath]);
+const builtCliPath = path.join("packages", "ai-engine", "dist", "cli.js");
+// eslint-disable-next-line no-console
+console.log(`[ai-engine] copy ${builtCliPath} -> ${outPath}`);
+copyFileSync(builtCliPath, outPath);

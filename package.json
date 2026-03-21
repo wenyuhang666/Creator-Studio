@@ -10,7 +10,7 @@
     "tauri": "tauri",
     "ai-engine:build": "node scripts/build-ai-engine.mjs",
     "tauri:dev": "npm run ai-engine:build && tauri dev",
-    "tauri:build": "npm run ai-engine:build && CI=true tauri build"
+    "tauri:build": "npm run ai-engine:build && tauri build"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
