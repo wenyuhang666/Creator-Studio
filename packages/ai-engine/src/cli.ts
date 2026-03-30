@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 import { createEngine } from './index'
 import { generateCompactSummary } from './compact'
@@ -47,9 +47,27 @@ type EngineOutput =
   | { type: 'models'; models: string[] }
   | { type: 'error'; message: string }
 
-const stdinReader = Bun.stdin.stream().getReader()
-const decoder = new TextDecoder()
 let stdinBuffer = ''
+let stdinEnded = false
+let wakeReader: (() => void) | null = null
+
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', (chunk: string) => {
+  stdinBuffer += chunk
+  if (wakeReader) {
+    const resolve = wakeReader
+    wakeReader = null
+    resolve()
+  }
+})
+process.stdin.on('end', () => {
+  stdinEnded = true
+  if (wakeReader) {
+    const resolve = wakeReader
+    wakeReader = null
+    resolve()
+  }
+})
 
 async function readJsonFromStdin(): Promise<unknown> {
   while (true) {
@@ -61,11 +79,12 @@ async function readJsonFromStdin(): Promise<unknown> {
       return JSON.parse(line)
     }
 
-    const { done, value } = await stdinReader.read()
-    if (done) {
+    if (stdinEnded) {
       throw new Error('EOF before complete JSON')
     }
-    stdinBuffer += decoder.decode(value, { stream: true })
+    await new Promise<void>((resolve) => {
+      wakeReader = resolve
+    })
   }
 }
 
