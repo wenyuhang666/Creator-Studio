@@ -5,9 +5,53 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { message } from "antd";
 import { formatError } from "../utils/error";
+
+// ==================== 网页版章节存储 ====================
+
+const WEB_CHAPTERS_KEY = "creator-web-chapters";
+
+interface WebChapter {
+  id: string;
+  title: string;
+  content: string;
+  order: number;
+  created: number;
+  updated: number;
+  wordCount: number;
+}
+
+function getWebChapters(): WebChapter[] {
+  try {
+    const stored = localStorage.getItem(WEB_CHAPTERS_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch {}
+  return [];
+}
+
+function setWebChapters(chapters: WebChapter[]): void {
+  try {
+    localStorage.setItem(WEB_CHAPTERS_KEY, JSON.stringify(chapters));
+  } catch {}
+}
+
+function createWebChapter(title: string): WebChapter {
+  return {
+    id: `chapter-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title,
+    content: "",
+    order: getWebChapters().length,
+    created: Date.now(),
+    updated: Date.now(),
+    wordCount: 0,
+  };
+}
+
+// ==================== 类型定义 ====================
 
 export interface ChapterMeta {
   id: string;
@@ -49,12 +93,42 @@ export function useChapterManager(
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
   const contentLoadTokenRef = useRef(0);
 
+  // 检查是否为网页版
+  const isWebEnv = !isTauri();
+  const isWebDemo = projectPath.startsWith("web-demo://");
+
   // 刷新章节列表
   const refreshChapters = useCallback(async () => {
     try {
-      const result = (await invoke("list_chapters", {
-        projectPath,
-      })) as ChapterMeta[];
+      let result: ChapterMeta[];
+
+      if (isWebDemo) {
+        // 网页版演示项目
+        let webChapters = getWebChapters();
+        if (webChapters.length === 0) {
+          // 创建默认章节
+          const defaultChapter = createWebChapter("第一章");
+          defaultChapter.content = "欢迎使用 CreatorAI 网页版！\n\n您可以在此编写故事，同时体验世界观编辑器的功能。";
+          defaultChapter.wordCount = defaultChapter.content.length;
+          webChapters = [defaultChapter];
+          setWebChapters(webChapters);
+        }
+        result = webChapters.map((c) => ({
+          id: c.id,
+          title: c.title,
+          order: c.order,
+          created: c.created,
+          updated: c.updated,
+          wordCount: c.wordCount,
+        }));
+      } else if (isTauri()) {
+        result = (await invoke("list_chapters", { projectPath })) as ChapterMeta[];
+      } else {
+        setChapters([]);
+        setCurrentChapterId(null);
+        return;
+      }
+
       const next = (result || []).slice().sort((a, b) => a.order - b.order);
       setChapters(next);
 
@@ -70,16 +144,27 @@ export function useChapterManager(
       setChapters([]);
       setCurrentChapterId(null);
     }
-  }, [projectPath]);
+  }, [projectPath, isWebEnv, isWebDemo]);
 
   // 加载章节内容
   const loadChapterContent = useCallback(async (chapterId: string) => {
     const token = (contentLoadTokenRef.current += 1);
     try {
-      const content = (await invoke("get_chapter_content", {
-        projectPath,
-        chapterId,
-      })) as string;
+      let content: string;
+
+      if (isWebDemo) {
+        const webChapters = getWebChapters();
+        const chapter = webChapters.find((c) => c.id === chapterId);
+        content = chapter?.content || "";
+      } else if (isTauri()) {
+        content = (await invoke("get_chapter_content", {
+          projectPath,
+          chapterId,
+        })) as string;
+      } else {
+        content = "";
+      }
+
       if (contentLoadTokenRef.current !== token) return;
       setChapterContent(content ?? "");
       setDraftContentState(content ?? "");
@@ -92,7 +177,7 @@ export function useChapterManager(
       onContentChange?.("");
       message.error(`加载章节内容失败: ${formatError(error)}`);
     }
-  }, [projectPath, onContentChange]);
+  }, [projectPath, onContentChange, isWebDemo]);
 
   // 选择章节
   const selectChapter = useCallback((chapterId: string | null) => {
@@ -107,11 +192,23 @@ export function useChapterManager(
     if (!currentChapterId) return;
     setSaveStatus("saving");
     try {
-      await invoke("save_chapter_content", {
-        projectPath,
-        chapterId: currentChapterId,
-        content,
-      });
+      if (isWebDemo) {
+        // 网页版保存
+        const webChapters = getWebChapters();
+        const index = webChapters.findIndex((c) => c.id === currentChapterId);
+        if (index !== -1) {
+          webChapters[index].content = content;
+          webChapters[index].wordCount = content.length;
+          webChapters[index].updated = Date.now();
+          setWebChapters(webChapters);
+        }
+      } else if (isTauri()) {
+        await invoke("save_chapter_content", {
+          projectPath,
+          chapterId: currentChapterId,
+          content,
+        });
+      }
       setChapterContent(content);
       setDraftContentState(content);
       onContentChange?.(content);
@@ -127,7 +224,7 @@ export function useChapterManager(
       setSaveStatus("unsaved");
       message.error(`保存失败: ${formatError(error)}`);
     }
-  }, [projectPath, currentChapterId, onContentChange]);
+  }, [projectPath, currentChapterId, onContentChange, isWebDemo]);
 
   // 更新草稿内容
   const setDraftContent = useCallback((content: string) => {

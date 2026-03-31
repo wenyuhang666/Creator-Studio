@@ -5,6 +5,7 @@ import {
   MoonOutlined,
   SettingOutlined,
   SunOutlined,
+  GlobalOutlined,
 } from "@ant-design/icons";
 import type { ReactNode } from "react";
 import type { Theme } from "../../hooks/useTheme";
@@ -27,6 +28,7 @@ export default function ActivityBar({
   const items: Array<{ key: SidebarView; label: string; icon: ReactNode }> = [
     { key: "chapters", label: "章节", icon: <FileTextOutlined /> },
     { key: "knowledge", label: "知识库", icon: <BookOutlined /> },
+    { key: "worldbuilding", label: "世界观", icon: <GlobalOutlined /> },
     { key: "settings", label: "设置", icon: <SettingOutlined /> },
   ];
 

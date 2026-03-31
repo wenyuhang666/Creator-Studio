@@ -14,13 +14,14 @@ import { KnowledgePanel } from "../components/Knowledge";
 import { Sidebar } from "../components/Sidebar";
 import { SettingsPanel } from "../components/Settings";
 import { StatusBar } from "../components/StatusBar";
+import WorldbuildingPanel from "../components/Worldbuilding";
 import { useLayoutManager } from "../hooks/useLayoutManager";
 import { useChapterManager } from "../hooks/useChapterManager";
 import type { Theme } from "../hooks/useTheme";
 import { countWords } from "../utils/wordCount";
 import "./main-layout.css";
 
-export type SidebarView = "chapters" | "knowledge" | "settings";
+export type SidebarView = "chapters" | "knowledge" | "settings" | "worldbuilding";
 
 interface MainLayoutProps {
   projectPath: string;
@@ -111,98 +112,113 @@ export default function MainLayout({
     };
   }, [projectPath, chapter]);
 
+  // 是否为全屏模式（世界观编辑器等）
+  const isFullscreenMode = sidebarView === "worldbuilding";
+
   return (
     <div
       className="main-layout"
       ref={layout.layoutRef}
       style={{
-        ["--sidebar-width" as never]: `${Math.max(0, layout.sidebarWidth)}px`,
-        ["--ai-panel-width" as never]: `${Math.max(0, layout.aiPanelWidth)}px`,
+        ["--sidebar-width" as never]: isFullscreenMode ? "0px" : `${Math.max(0, layout.sidebarWidth)}px`,
+        ["--ai-panel-width" as never]: isFullscreenMode ? "0px" : `${Math.max(0, layout.aiPanelWidth)}px`,
       }}
     >
       <ActivityBar
         activeView={sidebarView}
         onViewChange={(next) => {
           setSidebarView(next);
-          if (layout.sidebarCollapsed) layout.toggleSidebarCollapsed();
+          // 世界观模式不需要展开侧边栏
+          if (layout.sidebarCollapsed && next !== "worldbuilding") {
+            layout.toggleSidebarCollapsed();
+          }
         }}
         theme={theme}
         onToggleTheme={onToggleTheme}
       />
 
-      <aside className={layout.sidebarCollapsed ? "sidebar collapsed" : "sidebar"}>
-        <div className="sidebar-header">
-          <div className="sidebar-project-title">
-            <Typography.Text strong>{projectName}</Typography.Text>
-          </div>
-          <Typography.Text type="secondary" className="sidebar-project-path">
-            {projectPath}
-          </Typography.Text>
-          <Space size={8} className="sidebar-project-actions">
-            <Button
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={onCreateProject}
-              disabled={projectBusy}
-            >
-              新建
-            </Button>
-            <Button
-              size="small"
-              icon={<FolderOpenOutlined />}
-              onClick={onOpenProject}
-              disabled={projectBusy}
-            >
-              打开
-            </Button>
-            <Button size="small" onClick={onCloseProject} disabled={projectBusy}>
-              关闭
-            </Button>
-          </Space>
-        </div>
+      {/* 全屏模式：世界观编辑器直接占满中间区域 */}
+      {isFullscreenMode ? (
+        <main className="editor-area" style={{ width: "100%" }}>
+          <WorldbuildingPanel />
+        </main>
+      ) : (
+        <>
+          <aside className={layout.sidebarCollapsed ? "sidebar collapsed" : "sidebar"}>
+            <div className="sidebar-header">
+              <div className="sidebar-project-title">
+                <Typography.Text strong>{projectName}</Typography.Text>
+              </div>
+              <Typography.Text type="secondary" className="sidebar-project-path">
+                {projectPath}
+              </Typography.Text>
+              <Space size={8} className="sidebar-project-actions">
+                <Button
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={onCreateProject}
+                  disabled={projectBusy}
+                >
+                  新建
+                </Button>
+                <Button
+                  size="small"
+                  icon={<FolderOpenOutlined />}
+                  onClick={onOpenProject}
+                  disabled={projectBusy}
+                >
+                  打开
+                </Button>
+                <Button size="small" onClick={onCloseProject} disabled={projectBusy}>
+                  关闭
+                </Button>
+              </Space>
+            </div>
 
-        <div className="sidebar-content">
-          {sidebarView === "chapters" && <Sidebar projectPath={projectPath} />}
-          {sidebarView === "knowledge" && <KnowledgePanel projectPath={projectPath} />}
-          {sidebarView === "settings" && <SettingsPanel />}
-        </div>
-      </aside>
+            <div className="sidebar-content">
+              {sidebarView === "chapters" && <Sidebar projectPath={projectPath} />}
+              {sidebarView === "knowledge" && <KnowledgePanel projectPath={projectPath} />}
+              {sidebarView === "settings" && <SettingsPanel />}
+            </div>
+          </aside>
 
-      <div
-        className={`panel-resizer sidebar-resizer ${layout.dragging === "sidebar" ? "dragging" : ""}`}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="调整侧边栏宽度"
-        title="拖拽调整宽度，双击隐藏/显示"
-        onPointerDown={layout.beginResizeSidebar}
-        onDoubleClick={layout.toggleSidebarCollapsed}
-      />
+          <div
+            className={`panel-resizer sidebar-resizer ${layout.dragging === "sidebar" ? "dragging" : ""}`}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整侧边栏宽度"
+            title="拖拽调整宽度，双击隐藏/显示"
+            onPointerDown={layout.beginResizeSidebar}
+            onDoubleClick={layout.toggleSidebarCollapsed}
+          />
 
-      <main className="editor-area">
-        <Editor
-          ref={editorRef}
-          projectPath={projectPath}
-          chapterId={chapter.currentChapterId}
-          chapterTitle={chapterTitle}
-          initialContent={chapter.chapterContent}
-          onChange={handleDraftChange}
-          onSave={handleSave}
-        />
-      </main>
+          <main className="editor-area">
+            <Editor
+              ref={editorRef}
+              projectPath={projectPath}
+              chapterId={chapter.currentChapterId}
+              chapterTitle={chapterTitle}
+              initialContent={chapter.chapterContent}
+              onChange={handleDraftChange}
+              onSave={handleSave}
+            />
+          </main>
 
-      <div
-        className={`panel-resizer ai-resizer ${layout.dragging === "ai" ? "dragging" : ""}`}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="调整 AI 面板宽度"
-        title="拖拽调整宽度，双击隐藏/显示"
-        onPointerDown={layout.beginResizeAi}
-        onDoubleClick={layout.toggleAiPanelCollapsed}
-      />
+          <div
+            className={`panel-resizer ai-resizer ${layout.dragging === "ai" ? "dragging" : ""}`}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整 AI 面板宽度"
+            title="拖拽调整宽度，双击隐藏/显示"
+            onPointerDown={layout.beginResizeAi}
+            onDoubleClick={layout.toggleAiPanelCollapsed}
+          />
 
-      <aside className={layout.aiPanelCollapsed ? "ai-panel collapsed" : "ai-panel"}>
-        <AIPanel projectPath={projectPath} />
-      </aside>
+          <aside className={layout.aiPanelCollapsed ? "ai-panel collapsed" : "ai-panel"}>
+            <AIPanel projectPath={projectPath} />
+          </aside>
+        </>
+      )}
 
       <div className="status-bar-container">
         <StatusBar
