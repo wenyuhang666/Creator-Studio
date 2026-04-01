@@ -113,14 +113,16 @@ fn find_ai_engine_in_dir(dir: &Path) -> Option<PathBuf> {
 
 fn find_bundled_ai_engine() -> Option<PathBuf> {
     let exe_dir = current_exe_dir()?;
+
+    // MSI 打包: 资源文件在 <install_dir>/bin/ai-engine.js
+    // NSIS 打包: 在 <install_dir>/ai-engine.js
+    // macOS: <app>.app/Contents/Resources/ai-engine.js
+    // 搜索顺序从最可能的位置开始
     let candidates = [
-        exe_dir.join("bin"),
-        exe_dir.clone(),
-        exe_dir.join("../Resources"),
-        exe_dir.join("../Resources/bin"),
-        exe_dir.join("../MacOS"),
-        exe_dir.join("../bin"),
+        exe_dir.join("bin"),    // MSI resources: bin/ai-engine.js
+        exe_dir.clone(),         // NSIS/直接复制: ai-engine.js
     ];
+
     for dir in candidates {
         if let Some(found) = find_ai_engine_in_dir(&dir) {
             return Some(found);
@@ -140,6 +142,12 @@ fn find_dev_sidecar_ai_engine() -> Option<PathBuf> {
 
 fn get_ai_engine_path() -> Result<PathBuf, String> {
     let mut override_error: Option<String> = None;
+    
+    // 调试日志：记录 exe 目录位置
+    if let Some(exe_dir) = current_exe_dir() {
+        eprintln!("[ai-bridge] exe_dir: {}", exe_dir.display());
+    }
+    
     if let Ok(raw) = std::env::var("CREATORAI_AI_ENGINE_CLI_PATH") {
         let trimmed = raw.trim();
         if !trimmed.is_empty() {
@@ -157,22 +165,28 @@ fn get_ai_engine_path() -> Result<PathBuf, String> {
                     resolved.display()
                 ));
             } else {
+                eprintln!("[ai-bridge] Using override path: {}", resolved.display());
                 return Ok(resolved);
             }
         }
     }
 
     if let Some(path) = find_bundled_ai_engine() {
+        eprintln!("[ai-bridge] Found bundled ai-engine at: {}", path.display());
         return Ok(path);
     }
+    eprintln!("[ai-bridge] Bundled ai-engine not found, trying dev sidecar...");
 
     if let Some(path) = find_dev_sidecar_ai_engine() {
+        eprintln!("[ai-bridge] Found dev sidecar at: {}", path.display());
         return Ok(path);
     }
+    eprintln!("[ai-bridge] Dev sidecar not found, trying source file...");
 
     if let Some(root) = dev_repo_root_dir() {
         let ai_engine_path = root.join("packages/ai-engine/src/cli.ts");
         if ai_engine_path.exists() {
+            eprintln!("[ai-bridge] Found source file at: {}", ai_engine_path.display());
             return Ok(ai_engine_path);
         }
     }
@@ -183,6 +197,7 @@ fn get_ai_engine_path() -> Result<PathBuf, String> {
     if let Some(prefix) = override_error {
         message = format!("{prefix}\n\n{message}");
     }
+    eprintln!("[ai-bridge] ERROR: {}", message);
     Err(message)
 }
 

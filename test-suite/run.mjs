@@ -1,5 +1,6 @@
 import { runRegressionSuite } from "./cases/regression.mjs";
 import { runAiEngineSidecarSuite } from "./cases/ai-engine-sidecar.mjs";
+import { runAiEnginePackagingSuite } from "./cases/ai-engine-packaging.mjs";
 import { runDefaultProviderSuite } from "./cases/default-provider.mjs";
 import { runEditorShortcutsSuite } from "./cases/editor-shortcuts.mjs";
 import { runNoHardcodedSecretsSuite } from "./cases/no-hardcoded-secrets.mjs";
@@ -10,6 +11,7 @@ const suite = process.argv[2] ?? "regression";
 const suites = {
   regression: runRegressionSuite,
   "ai-engine-sidecar": runAiEngineSidecarSuite,
+  "ai-engine-packaging": runAiEnginePackagingSuite,
   "default-provider": runDefaultProviderSuite,
   "editor-shortcuts": runEditorShortcutsSuite,
   "no-hardcoded-secrets": runNoHardcodedSecretsSuite,
