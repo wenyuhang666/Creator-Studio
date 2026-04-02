@@ -444,6 +444,164 @@ pub fn generate_compact_summary(
     }
 }
 
+pub fn run_extract(
+    provider: Value,
+    parameters: Value,
+    text: String,
+) -> Result<Value, String> {
+    let ai_engine_path = get_ai_engine_path()?;
+    let mut child = spawn_ai_engine(&ai_engine_path)?;
+
+    let mut stdin = child.stdin.take().ok_or("Failed to get stdin")?;
+    let stdout = child.stdout.take().ok_or("Failed to get stdout")?;
+    let mut reader = BufReader::new(stdout);
+
+    // Runtime API Key injection
+    let mut provider_with_auth = provider.clone();
+    if let Some(provider_id) = provider_with_auth.get("id").and_then(|v| v.as_str()) {
+        if let Ok(Some(api_key)) = keyring_store::get_api_key(provider_id) {
+            let provider_type = provider_with_auth
+                .get("provider_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("openai-compatible");
+            match provider_type {
+                "anthropic" => {
+                    if let Some(obj) = provider_with_auth.as_object_mut() {
+                        let headers = obj.entry("headers").or_insert(json!({}));
+                        if let Some(h) = headers.as_object_mut() {
+                            h.insert("x-api-key".to_string(), json!(api_key));
+                        }
+                    }
+                }
+                "google" => {
+                    if let Some(obj) = provider_with_auth.as_object_mut() {
+                        let headers = obj.entry("headers").or_insert(json!({}));
+                        if let Some(h) = headers.as_object_mut() {
+                            h.insert("x-goog-api-key".to_string(), json!(api_key));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let request = json!({
+        "type": "extract",
+        "provider": provider_with_auth,
+        "parameters": parameters,
+        "text": text,
+    });
+
+    writeln!(stdin, "{}", request.to_string())
+        .map_err(|e| format!("Failed to write to stdin: {e}"))?;
+    drop(stdin);
+
+    let mut line = String::new();
+    reader.read_line(&mut line)
+        .map_err(|e| format!("Failed to read from stdout: {e}"))?;
+
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        let _ = child.wait();
+        return Err("Empty response from ai-engine".to_string());
+    }
+
+    let response: Value = serde_json::from_str(trimmed)
+        .map_err(|e| format!("Failed to parse response: {e}. line={trimmed:?}"))?;
+
+    let _ = child.wait();
+
+    match response["type"].as_str() {
+        Some("extract_result") => Ok(response),
+        Some("error") => Err(response["message"].as_str().unwrap_or("Unknown error").to_string()),
+        _ => Err(format!("Unknown response: {trimmed}")),
+    }
+}
+
+pub fn run_transform(
+    provider: Value,
+    parameters: Value,
+    text: String,
+    action: String,
+    style: Option<String>,
+) -> Result<String, String> {
+    let ai_engine_path = get_ai_engine_path()?;
+    let mut child = spawn_ai_engine(&ai_engine_path)?;
+
+    let mut stdin = child.stdin.take().ok_or("Failed to get stdin")?;
+    let stdout = child.stdout.take().ok_or("Failed to get stdout")?;
+    let mut reader = BufReader::new(stdout);
+
+    // Runtime API Key injection
+    let mut provider_with_auth = provider.clone();
+    if let Some(provider_id) = provider_with_auth.get("id").and_then(|v| v.as_str()) {
+        if let Ok(Some(api_key)) = keyring_store::get_api_key(provider_id) {
+            let provider_type = provider_with_auth
+                .get("provider_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("openai-compatible");
+            match provider_type {
+                "anthropic" => {
+                    if let Some(obj) = provider_with_auth.as_object_mut() {
+                        let headers = obj.entry("headers").or_insert(json!({}));
+                        if let Some(h) = headers.as_object_mut() {
+                            h.insert("x-api-key".to_string(), json!(api_key));
+                        }
+                    }
+                }
+                "google" => {
+                    if let Some(obj) = provider_with_auth.as_object_mut() {
+                        let headers = obj.entry("headers").or_insert(json!({}));
+                        if let Some(h) = headers.as_object_mut() {
+                            h.insert("x-goog-api-key".to_string(), json!(api_key));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut request = json!({
+        "type": "transform",
+        "provider": provider_with_auth,
+        "parameters": parameters,
+        "text": text,
+        "action": action,
+    });
+    if let Some(s) = style {
+        request["style"] = json!(s);
+    }
+
+    writeln!(stdin, "{}", request.to_string())
+        .map_err(|e| format!("Failed to write to stdin: {e}"))?;
+    drop(stdin);
+
+    let mut line = String::new();
+    reader.read_line(&mut line)
+        .map_err(|e| format!("Failed to read from stdout: {e}"))?;
+
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        let _ = child.wait();
+        return Err("Empty response from ai-engine".to_string());
+    }
+
+    let response: Value = serde_json::from_str(trimmed)
+        .map_err(|e| format!("Failed to parse response: {e}. line={trimmed:?}"))?;
+
+    let _ = child.wait();
+
+    match response["type"].as_str() {
+        Some("transform_result") => {
+            Ok(response["content"].as_str().unwrap_or("").to_string())
+        }
+        Some("error") => Err(response["message"].as_str().unwrap_or("Unknown error").to_string()),
+        _ => Err(format!("Unknown response: {trimmed}")),
+    }
+}
+
 fn complete_timeout() -> Duration {
     const DEFAULT_TIMEOUT_MS: u64 = 30_000;
     let raw = std::env::var("CREATORAI_AI_COMPLETE_TIMEOUT_MS").ok();

@@ -544,6 +544,34 @@ async fn ai_chat(
     response
 }
 
+#[tauri::command(rename_all = "camelCase")]
+async fn ai_extract(
+    provider: serde_json::Value,
+    parameters: serde_json::Value,
+    text: String,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_bridge::run_extract(provider, parameters, text)
+    })
+    .await
+    .map_err(|e| format!("ai_extract join error: {e}"))?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+async fn ai_transform(
+    provider: serde_json::Value,
+    parameters: serde_json::Value,
+    text: String,
+    action: String,
+    style: Option<String>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_bridge::run_transform(provider, parameters, text, action, style)
+    })
+    .await
+    .map_err(|e| format!("ai_transform join error: {e}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -616,7 +644,9 @@ pub fn run() {
             compact_session,
             consume_ui_cleanup_flag,
             preview_import_txt,
-            import_txt
+            import_txt,
+            ai_extract,
+            ai_transform
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
