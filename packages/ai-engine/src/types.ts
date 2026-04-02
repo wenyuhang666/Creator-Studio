@@ -51,3 +51,28 @@ export interface AgentResult {
   content: string
   toolCalls?: ToolCallRequest[]
 }
+
+// Pipeline 上下文
+export interface PipelineContext {
+  provider: ProviderConfig;
+  parameters: ModelParameters;
+  systemPrompt?: string;
+  messages?: Message[];
+  input?: string;
+  options?: Record<string, unknown>;
+}
+
+// Pipeline 输出
+export interface PipelineResult {
+  type: string;
+  content?: string;
+  structured?: unknown;
+  models?: string[];
+  toolCalls?: ToolCallRequest[];
+}
+
+// Pipeline JSONL 输入基础类型
+export interface PipelineInput {
+  type: string;
+  [key: string]: unknown;
+}
