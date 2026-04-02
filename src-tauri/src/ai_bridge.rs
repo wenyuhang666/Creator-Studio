@@ -416,8 +416,16 @@ pub fn generate_compact_summary(
         .read_line(&mut line)
         .map_err(|e| format!("Failed to read from stdout: {e}"))?;
 
-    let response: Value = serde_json::from_str(&line)
-        .map_err(|e| format!("Failed to parse response: {e}. line={line:?}"))?;
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        let _ = child.wait();
+        return Err("Empty response from ai-engine".to_string());
+    }
+    let response: Value = serde_json::from_str(trimmed)
+        .map_err(|e| {
+            let _ = child.wait();
+            format!("Failed to parse response: {e}. line={trimmed:?}")
+        })?;
 
     match response["type"].as_str() {
         Some("compact_summary") => {
@@ -574,8 +582,17 @@ pub fn run_complete(
             }
         };
 
-        let response: Value = serde_json::from_str(&line)
-            .map_err(|e| format!("Failed to parse response: {e}. line={line:?}"))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let response: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("[ai-bridge] Skipping non-JSON line: {e}. line={trimmed:?}");
+                continue;
+            }
+        };
 
         match response["type"].as_str() {
             Some("done") => {
@@ -745,8 +762,17 @@ pub fn run_chat_with_events(
             }
         };
 
-        let response: Value = serde_json::from_str(&line)
-            .map_err(|e| format!("Failed to parse response: {e}. line={line:?}"))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let response: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("[ai-bridge] Skipping non-JSON line: {e}. line={trimmed:?}");
+                continue;
+            }
+        };
 
         match response["type"].as_str() {
             Some("done") => {
