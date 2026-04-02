@@ -23,3 +23,23 @@ src-tauri/bin/
 *.njsproj
 *.sln
 *.sw?
+.ace-tool/
+
+# Vite dependency cache
+.vite/
+
+# Build / release artifacts
+release/
+*.dmg
+
+# Runtime model files
+.creatorai/rag/models/
+
+# Claude Code task files
+tasks/
+
+# Debug notes
+bug/
+
+# Dev harness
+editor-harness.html
