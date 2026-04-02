@@ -225,3 +225,68 @@ ${after}
 
   return typeof result === "string" ? result : String(result ?? "");
 }
+
+export interface ExtractedWorldbuilding {
+  characters: Array<{
+    name: string;
+    description: string;
+    role: string;
+    tags: string[];
+  }>;
+  relationships: Array<{
+    from: string;
+    to: string;
+    type: string;
+    description: string;
+  }>;
+  factions: Array<{
+    name: string;
+    description: string;
+    members: string[];
+  }>;
+  events: Array<{
+    title: string;
+    description: string;
+    type: string;
+    characters: string[];
+  }>;
+}
+
+export async function aiExtract(params: {
+  text: string;
+}): Promise<{ content: string; structured: ExtractedWorldbuilding | null }> {
+  const active = await getActiveChatConfig();
+  if (!active) {
+    throw new Error("请先在设置中添加 Provider，并设为当前，然后配置模型参数。");
+  }
+
+  const result = (await invoke("ai_extract", {
+    provider: active.provider,
+    parameters: active.parameters,
+    text: params.text,
+  })) as { content?: string; structured?: ExtractedWorldbuilding };
+
+  return {
+    content: result.content ?? "",
+    structured: result.structured ?? null,
+  };
+}
+
+export async function aiTransform(params: {
+  text: string;
+  action: "polish" | "expand" | "condense" | "restyle";
+  style?: string;
+}): Promise<string> {
+  const active = await getActiveChatConfig();
+  if (!active) {
+    throw new Error("请先在设置中添加 Provider，并设为当前，然后配置模型参数。");
+  }
+
+  return (await invoke("ai_transform", {
+    provider: active.provider,
+    parameters: active.parameters,
+    text: params.text,
+    action: params.action,
+    style: params.style ?? null,
+  })) as string;
+}
