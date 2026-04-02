@@ -79,6 +79,7 @@ function Editor({
   const completionTimerRef = useRef<number | null>(null);
   const completionSeqRef = useRef(0);
   const completingRef = useRef(false);
+  const completionCacheRef = useRef<Map<string, { result: string; ts: number }>>(new Map());
 
   // 使用编辑器设置
   const editorSettings = useEditorSettingsStore((state) => state.settings);
@@ -160,7 +161,7 @@ function Editor({
       if (!disableInlineCompletion) {
         completionTimerRef.current = window.setTimeout(() => {
           void requestCompletion(view);
-        }, 700);
+        }, 500);
       }
     };
 
@@ -177,13 +178,32 @@ function Editor({
       completingRef.current = true;
       const seq = (completionSeqRef.current += 1);
 
+      // Check cache (last 200 chars of before as key, 30s TTL)
+      const cacheKey = before.slice(-200);
+      const cached = completionCacheRef.current.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 30_000) {
+        if (completionSeqRef.current !== seq) return;
+        if (viewRef.current !== view) return;
+        const currentSel = view.state.selection.main;
+        if (!currentSel.empty || currentSel.head !== cursor) return;
+        view.dispatch({ effects: setInlineCompletion.of(cached.result) });
+        completingRef.current = false;
+        return;
+      }
+
       try {
-        const raw = await aiComplete({
-          projectDir: projectPath,
-          beforeText: before,
-          afterText: after,
-          maxChars: 180,
-        });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          window.setTimeout(() => reject(new Error("__timeout__")), 8_000),
+        );
+        const raw = await Promise.race([
+          aiComplete({
+            projectDir: projectPath,
+            beforeText: before,
+            afterText: after,
+            maxChars: 180,
+          }),
+          timeoutPromise,
+        ]);
 
         if (completionSeqRef.current !== seq) return;
         if (viewRef.current !== view) return;
@@ -200,12 +220,14 @@ function Editor({
         const maxLen = 260;
         if (text.length > maxLen) text = text.slice(0, maxLen);
 
+        completionCacheRef.current.set(cacheKey, { result: text, ts: Date.now() });
         view.dispatch({ effects: setInlineCompletion.of(text) });
       } catch (error) {
         if (completionSeqRef.current !== seq) return;
-        const text = formatError(error);
-        if (/已停止生成|cancelled|canceled|aborted|取消/i.test(text)) return;
-        if (text.includes("请先在设置") || text.includes("Provider") || text.includes("模型")) {
+        const errText = formatError(error);
+        if (/已停止生成|cancelled|canceled|aborted|取消/i.test(errText)) return;
+        if (errText === "__timeout__" || /timeout/i.test(errText)) return;
+        if (errText.includes("请先在设置") || errText.includes("Provider") || errText.includes("模型")) {
           message.warning("未配置 Provider/模型，无法使用补全。请先在设置里配置。");
         }
       } finally {
