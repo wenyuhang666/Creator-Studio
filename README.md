@@ -89,9 +89,7 @@ Tauri 支持多平台打包，但构建需要在目标平台进行：
 | **Windows** | `npm run tauri:build:win` | `*.msi`, `*-setup.exe` |
 | **macOS** | `npm run tauri:build:mac` | `*.dmg`, `*.app` |
 | **Linux** | `npm run tauri:build:linux` | `*.appimage`, `*.deb`, `*.rpm` |
-| **全部平台** | `npm run tauri:build:all` | 交叉编译所有目标 |
 
-> ⚠️ **注意**：交叉编译需要安装对应平台的 Rust 工具链。
 > 推荐在目标平台进行构建以确保兼容性。
 
 ### 本地构建（当前平台）
@@ -105,25 +103,7 @@ npm run tauri:build
 - 执行 Tauri release build
 - 将最终安装包同步复制到项目根目录 `release/`
 
-### 指定目标平台
-
-```bash
-# Windows x64
-npm run tauri:build -- --target x86_64-pc-windows-msvc
-
-# macOS ARM64
-npm run tauri:build -- --target aarch64-apple-darwin
-
-# macOS Intel
-npm run tauri:build -- --target x86_64-apple-darwin
-
-# Linux
-npm run tauri:build -- --target x86_64-unknown-linux-gnu
-```
-
-### Tauri 原始输出目录
-
-Tauri bundle 输出位置：
+### Tauri 输出目录
 
 ```
 src-tauri/target/release/bundle/

@@ -119,8 +119,10 @@ fn find_bundled_ai_engine() -> Option<PathBuf> {
     // macOS: <app>.app/Contents/Resources/ai-engine.js
     // 搜索顺序从最可能的位置开始
     let candidates = [
-        exe_dir.join("bin"),    // MSI resources: bin/ai-engine.js
-        exe_dir.clone(),         // NSIS/直接复制: ai-engine.js
+        exe_dir.join("bin"),              // MSI resources: bin/ai-engine.js
+        exe_dir.clone(),                   // NSIS/直接复制: ai-engine.js
+        exe_dir.join("../Resources"),      // macOS: Contents/Resources/
+        exe_dir.join("../Resources/bin"),   // macOS: Contents/Resources/bin/
     ];
 
     for dir in candidates {

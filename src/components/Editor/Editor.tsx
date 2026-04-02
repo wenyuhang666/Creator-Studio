@@ -221,38 +221,6 @@ function Editor({
       // 空格键拦截 - 必须放在最前面，确保优先执行
       keymap.of([
         {
-          key: " ",  // 空格键
-          run: (view: EditorView) => {
-            const { state } = view;
-            const selection = state.selection.main;
-
-            // 如果有选中文本，不拦截，让默认行为处理
-            if (!selection.empty) return false;
-
-            // 获取 spaceWidthRatio 设置
-            const spaceWidthRatio = editorSettings.spaceWidthRatio;
-            
-            // 计算需要插入的空格数
-            // HTML 中每个空格默认宽度为 0.5em
-            // 要达到一个汉字宽度，需要 1 / spaceWidthRatio 个空格
-            const spaceCount = Math.round(1 / spaceWidthRatio);
-
-            // 在光标位置插入正确数量的空格
-            view.dispatch({
-              changes: {
-                from: selection.from,
-                to: selection.from,
-                insert: " ".repeat(spaceCount),
-              },
-              selection: { anchor: selection.from + spaceCount },
-            });
-
-            return true; // 阻止默认行为
-          },
-        },
-      ]),
-      keymap.of([
-        {
           key: "Mod-z",
           run: undo,
           preventDefault: true,

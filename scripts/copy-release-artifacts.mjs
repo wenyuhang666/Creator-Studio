@@ -12,7 +12,6 @@ const isLinux = process.platform === "linux";
 // 根据平台确定 bundle 目录
 function getBundleDirs() {
   const dirs = [];
-  // Windows x86_64 构建使用特定目录
   if (isWindows) {
     const base = path.join(root, "src-tauri", "target", "x86_64-pc-windows-msvc", "release", "bundle");
     dirs.push(path.join(base, "msi"));
@@ -22,14 +21,12 @@ function getBundleDirs() {
     if (isMac) {
       dirs.push(path.join(base, "dmg"));
       dirs.push(path.join(base, "app"));
-      dirs.push(path.join(base, "appimage"));
     } else if (isLinux) {
       dirs.push(path.join(base, "appimage"));
       dirs.push(path.join(base, "deb"));
       dirs.push(path.join(base, "rpm"));
     }
   }
-
   return dirs;
 }
 
@@ -53,7 +50,6 @@ for (const name of readdirSync(releaseDir)) {
 
 // 复制新构建
 const bundleDirs = getBundleDirs();
-const isReleaseBuild = process.argv.includes("--release");
 
 for (const dir of bundleDirs) {
   if (!existsSync(dir)) continue;
@@ -70,13 +66,3 @@ for (const dir of bundleDirs) {
 
 console.log(`\n[release] 当前平台: ${process.platform}`);
 console.log(`[release] 已复制到: ${releaseDir}`);
-
-// 输出支持的平台信息
-console.log("\n[release] 支持的平台包:");
-console.log("  Windows: *.msi, *.exe (NSIS)");
-console.log("  macOS:   *.dmg, *.app");
-console.log("  Linux:   *.appimage, *.deb, *.rpm");
-console.log("\n[release] 要构建其他平台:");
-console.log("  - 在 macOS 上运行: npm run tauri:build");
-console.log("  - 在 Linux 上运行: npm run tauri:build");
-console.log("  - 指定平台: tauri build --target x86_64-pc-windows-msvc");
