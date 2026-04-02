@@ -5,12 +5,14 @@
 
 import React, { useState } from 'react';
 import { Tabs, Tag, Space, Button, Badge, Drawer, Typography } from 'antd';
-import { 
-  TeamOutlined, 
-  ApartmentOutlined, 
+import {
+  TeamOutlined,
+  ApartmentOutlined,
   ClockCircleOutlined,
   CloseOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
+import AIExtractModal from '../../features/worldbuilding/components/AIExtractModal';
 import { CharacterGraph } from '../../features/worldbuilding/components/CharacterGraph';
 import FactionTree from '../../features/worldbuilding/components/FactionTree';
 import TimelineEditor from '../../features/worldbuilding/components/TimelineEditor';
@@ -30,6 +32,7 @@ const WorldbuildingPanel: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<TimelineEvent | null>(null);
 
   const stats = useWorldbuildingStats();
+  const [extractModalVisible, setExtractModalVisible] = useState(false);
 
   // 渲染人物详情
   const renderCharacterDetail = () => {
@@ -185,6 +188,17 @@ const WorldbuildingPanel: React.FC = () => {
           onChange={setActiveTab}
           style={{ height: '100%' }}
           tabBarStyle={{ marginBottom: 0, paddingLeft: 16 }}
+          tabBarExtraContent={
+            <Button
+              type="primary"
+              icon={<RobotOutlined />}
+              size="small"
+              onClick={() => setExtractModalVisible(true)}
+              style={{ marginRight: 16 }}
+            >
+              AI 提取
+            </Button>
+          }
           items={[
             {
               key: 'character',
@@ -260,6 +274,10 @@ const WorldbuildingPanel: React.FC = () => {
         {activeTab === 'faction' && renderFactionDetail()}
         {activeTab === 'timeline' && renderEventDetail()}
       </Drawer>
+      <AIExtractModal
+        visible={extractModalVisible}
+        onClose={() => setExtractModalVisible(false)}
+      />
     </div>
   );
 };
