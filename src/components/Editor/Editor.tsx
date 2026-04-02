@@ -18,6 +18,7 @@ import { countWords } from "../../utils/wordCount";
 import { formatError } from "../../utils/error";
 import { aiComplete } from "../../lib/ai";
 import EditorHeader from "./EditorHeader";
+import PolishToolbar from './PolishToolbar';
 import "./editor.css";
 import { useAutoSave } from "./useAutoSave";
 import { createEditorTheme, getBackgroundStyles, getMarginLineStyle } from "./editorTheme";
@@ -76,6 +77,12 @@ function Editor({
   const [value, setValue] = useState(initialContent);
   const [canUndoState, setCanUndoState] = useState(false);
   const [canRedoState, setCanRedoState] = useState(false);
+  const [selectionInfo, setSelectionInfo] = useState<{
+    text: string;
+    from: number;
+    to: number;
+    position: { top: number; left: number };
+  } | null>(null);
   const completionTimerRef = useRef<number | null>(null);
   const completionSeqRef = useRef(0);
   const completingRef = useRef(false);
@@ -235,10 +242,34 @@ function Editor({
       }
     };
 
+    const selectionListener = EditorView.updateListener.of((update) => {
+      if (!update.selectionSet) return;
+      const { from, to } = update.state.selection.main;
+      const selectedText = update.state.doc.sliceString(from, to);
+      if (selectedText.length >= 10) {
+        const coords = update.view.coordsAtPos(from);
+        if (coords) {
+          const editorRect = update.view.dom.getBoundingClientRect();
+          setSelectionInfo({
+            text: selectedText,
+            from,
+            to,
+            position: {
+              top: coords.top - editorRect.top - 40,
+              left: Math.max(0, coords.left - editorRect.left),
+            },
+          });
+        }
+      } else {
+        setSelectionInfo(null);
+      }
+    });
+
     const extensions: Extension = [
       EditorView.lineWrapping,
       history(),
       inlineCompletionField,
+      selectionListener,
       inlineCompletionTheme,
       // 空格键拦截 - 必须放在最前面，确保优先执行
       keymap.of([
@@ -426,11 +457,28 @@ function Editor({
           ...(editorSettings.fixedLineWidthEnabled && {
             '--editor-line-width': `${editorSettings.lineWidth}ch`,
           } as React.CSSProperties),
+          position: 'relative',
         }}
       >
         {/* 右边距指示线 */}
         {editorSettings.fixedLineWidthEnabled && editorSettings.showMarginLine && (
           <div style={getMarginLineStyle(editorSettings) || {}} />
+        )}
+        {selectionInfo && (
+          <PolishToolbar
+            selectedText={selectionInfo.text}
+            position={selectionInfo.position}
+            onApply={(newText) => {
+              const view = viewRef.current;
+              if (view && selectionInfo) {
+                view.dispatch({
+                  changes: { from: selectionInfo.from, to: selectionInfo.to, insert: newText },
+                });
+                setSelectionInfo(null);
+              }
+            }}
+            onDismiss={() => setSelectionInfo(null)}
+          />
         )}
       </div>
     </div>
