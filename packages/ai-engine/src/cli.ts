@@ -1,51 +1,13 @@
 #!/usr/bin/env node
 
-import { createEngine } from './index'
-import { generateCompactSummary } from './compact'
-import { fetchModels } from './models'
-import type { Message, ModelParameters, ProviderConfig, ToolCallRequest, ToolCallResult } from './types'
+import { PipelineRegistry } from './core/registry'
+import { ChatPipeline } from './pipelines/chat'
+import { CompletePipeline } from './pipelines/complete'
+import { CompactPipeline } from './pipelines/compact'
+import { FetchModelsPipeline } from './pipelines/fetch-models'
+import type { PipelineRuntime } from './core/pipeline'
 
-type ChatInput = {
-  type: 'chat'
-  provider: ProviderConfig
-  parameters: ModelParameters
-  systemPrompt: string
-  messages: Message[]
-}
-
-type CompleteInput = {
-  type: 'complete'
-  provider: ProviderConfig
-  parameters: ModelParameters
-  systemPrompt: string
-  messages: Message[]
-}
-
-type FetchModelsInput = {
-  type: 'fetch_models'
-  baseURL: string
-  apiKey: string
-  providerType?: ProviderConfig['providerType']
-}
-
-type CompactInput = {
-  type: 'compact'
-  provider: ProviderConfig
-  parameters: ModelParameters
-  messages: Message[]
-}
-
-type ToolResultInput = {
-  type: 'tool_result'
-  results: ToolCallResult[]
-}
-
-type EngineOutput =
-  | { type: 'tool_call'; calls: ToolCallRequest[] }
-  | { type: 'done'; content: string }
-  | { type: 'compact_summary'; content: string }
-  | { type: 'models'; models: string[] }
-  | { type: 'error'; message: string }
+// --- JSONL I/O ---
 
 let stdinBuffer = ''
 let stdinEnded = false
@@ -78,7 +40,6 @@ async function readJsonFromStdin(): Promise<unknown> {
       if (!line) continue
       return JSON.parse(line)
     }
-
     if (stdinEnded) {
       throw new Error('EOF before complete JSON')
     }
@@ -88,85 +49,43 @@ async function readJsonFromStdin(): Promise<unknown> {
   }
 }
 
-function writeJson(output: EngineOutput) {
+function writeJson(output: Record<string, unknown>) {
   process.stdout.write(JSON.stringify(output) + '\n')
 }
 
+// --- Pipeline Registry ---
+
+const registry = new PipelineRegistry()
+registry.register(new ChatPipeline())
+registry.register(new CompletePipeline())
+registry.register(new CompactPipeline())
+registry.register(new FetchModelsPipeline())
+
+// --- Main ---
+
 async function main() {
-  const engine = createEngine()
+  const input = (await readJsonFromStdin()) as Record<string, unknown>
 
-  const input = (await readJsonFromStdin()) as
-    | ChatInput
-    | CompleteInput
-    | FetchModelsInput
-    | CompactInput
-
-  if (input.type === 'fetch_models') {
-    try {
-      const models = await fetchModels(input.baseURL, input.apiKey, input.providerType ?? 'openai-compatible')
-      writeJson({ type: 'models', models })
-    } catch (error) {
-      writeJson({ type: 'error', message: error instanceof Error ? error.message : String(error) })
-    }
-    process.exit(0)
-  }
-
-  if (input.type === 'compact') {
-    try {
-      const content = await generateCompactSummary({
-        provider: input.provider,
-        parameters: input.parameters,
-        messages: input.messages,
-      })
-      writeJson({ type: 'compact_summary', content })
-      process.exit(0)
-    } catch (error) {
-      writeJson({ type: 'error', message: error instanceof Error ? error.message : String(error) })
-      process.exit(1)
-    }
-  }
-
-  if (input.type === 'complete') {
-    engine.providerManager.addProvider(input.provider)
-
-    try {
-      const result = await engine.agent.complete(input.messages, {
-        providerId: input.provider.id,
-        parameters: input.parameters,
-        systemPrompt: input.systemPrompt,
-      })
-      writeJson({ type: 'done', content: result.content })
-      process.exit(0)
-    } catch (error) {
-      writeJson({ type: 'error', message: error instanceof Error ? error.message : String(error) })
-      process.exit(1)
-    }
-  }
-
-  if (input.type !== 'chat') {
-    writeJson({ type: 'error', message: 'Unknown request type' })
+  const type = input.type as string | undefined
+  if (!type) {
+    writeJson({ type: 'error', message: 'Missing request type' })
     process.exit(1)
   }
 
-  engine.providerManager.addProvider(input.provider)
+  const pipeline = registry.get(type)
+  if (!pipeline) {
+    writeJson({ type: 'error', message: `Unknown pipeline: ${type}. Available: ${registry.names().join(', ')}` })
+    process.exit(1)
+  }
+
+  const runtime: PipelineRuntime = {
+    readInput: readJsonFromStdin,
+    writeOutput: writeJson,
+  }
 
   try {
-    const result = await engine.agent.run(input.messages, {
-      providerId: input.provider.id,
-      parameters: input.parameters,
-      systemPrompt: input.systemPrompt,
-      executeTools: async (calls: ToolCallRequest[]) => {
-        writeJson({ type: 'tool_call', calls })
-
-        const resultInput = (await readJsonFromStdin()) as ToolResultInput
-        if (resultInput.type !== 'tool_result') {
-          throw new Error('Expected tool_result')
-        }
-        return resultInput.results
-      },
-    })
-
-    writeJson({ type: 'done', content: result.content })
+    const result = await pipeline.run(input, runtime)
+    writeJson(result)
   } catch (error) {
     writeJson({ type: 'error', message: error instanceof Error ? error.message : String(error) })
     process.exit(1)

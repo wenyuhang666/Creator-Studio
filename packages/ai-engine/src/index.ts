@@ -17,3 +17,6 @@ export function createEngine() {
     agent,
   }
 }
+
+export { PipelineRegistry } from './core/registry'
+export type { Pipeline, PipelineRuntime } from './core/pipeline'
