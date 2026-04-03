@@ -1,2 +1,5 @@
 [target.'cfg(target_os = "macos")']
-rustflags = ["-C", "link-arg=-mmacosx-version-min=13.4"]
+rustflags = ["-C", "link-arg=-mmacosx-version-min=13.3"]
+
+[env]
+MACOSX_DEPLOYMENT_TARGET = { value = "13.3", force = true }

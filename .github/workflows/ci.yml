@@ -46,6 +46,8 @@ jobs:
   macos-bundle:
     name: macOS bundle (unsigned)
     runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.3"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

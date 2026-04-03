@@ -15,7 +15,6 @@ export default defineConfig(async () => ({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
-        editorHarness: resolve(__dirname, "editor-harness.html"),
       },
     },
   },

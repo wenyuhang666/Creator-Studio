@@ -12,6 +12,8 @@ permissions:
 jobs:
   build-macos-arm64:
     runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.3"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,6 +46,9 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
       - name: Build ai-engine

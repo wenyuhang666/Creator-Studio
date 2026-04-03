@@ -125,7 +125,7 @@ const AIExtractModal: React.FC<AIExtractModalProps> = ({ visible, onClose, proje
       addFaction({
         name: faction.name,
         description: faction.description,
-        parentId: null,
+        parentId: undefined,
         members: faction.members,
         attributes: {},
       });

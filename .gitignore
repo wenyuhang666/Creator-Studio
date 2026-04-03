@@ -38,6 +38,9 @@ release/
 # Claude Code task files
 tasks/
 
+# Codex agent worktrees
+.agents/
+
 # Debug notes
 bug/
 
