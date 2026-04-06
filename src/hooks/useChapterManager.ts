@@ -80,6 +80,7 @@ export interface ChapterActions {
   loadChapterContent: (chapterId: string) => Promise<void>;
   saveChapter: (content: string) => Promise<void>;
   setDraftContent: (content: string) => void;
+  setSaveStatus: (status: "saved" | "saving" | "unsaved") => void;
 }
 
 export function useChapterManager(
@@ -93,6 +94,7 @@ export function useChapterManager(
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
   const contentLoadTokenRef = useRef(0);
   const isInitializedRef = useRef(false);
+  const isLoadingContentRef = useRef(false); // 标识是否正在加载内容，避免加载时触发未保存状态
 
   // 检查是否为网页版
   const isWebEnv = !isTauri();
@@ -150,6 +152,7 @@ export function useChapterManager(
   // 加载章节内容
   const loadChapterContent = useCallback(async (chapterId: string) => {
     const token = (contentLoadTokenRef.current += 1);
+    isLoadingContentRef.current = true; // 标记为正在加载内容
     try {
       let content: string;
 
@@ -171,20 +174,32 @@ export function useChapterManager(
       setDraftContentState(content ?? "");
       onContentChange?.(content ?? "");
       setSaveStatus("saved");
+      // 广播保存状态，让 ChapterList 显示未保存图标
+      window.dispatchEvent(
+        new CustomEvent("creatorai:chapterSaveStatus", {
+          detail: { projectPath, chapterId, saveStatus: "saved" },
+        }),
+      );
     } catch (error) {
       if (contentLoadTokenRef.current !== token) return;
       setChapterContent("");
       setDraftContentState("");
       onContentChange?.("");
       message.error(`加载章节内容失败: ${formatError(error)}`);
+    } finally {
+      isLoadingContentRef.current = false; // 清除加载状态
     }
   }, [projectPath, onContentChange, isWebDemo]);
 
-  // 选择章节
+  // 选择章节 - 唯一入口
   const selectChapter = useCallback((chapterId: string | null) => {
+    // 立即更新 currentChapterId（同步操作）
     setCurrentChapterId(chapterId);
+    // 保存到 localStorage
     if (chapterId) {
       localStorage.setItem(currentChapterStorageKey(projectPath), chapterId);
+    } else {
+      localStorage.removeItem(currentChapterStorageKey(projectPath));
     }
   }, [projectPath]);
 
@@ -217,8 +232,8 @@ export function useChapterManager(
 
       // 广播保存状态
       window.dispatchEvent(
-        new CustomEvent("creatorai:saveStatus", {
-          detail: { projectPath, saveStatus: "saved" },
+        new CustomEvent("creatorai:chapterSaveStatus", {
+          detail: { projectPath, chapterId: currentChapterId, saveStatus: "saved" },
         }),
       );
     } catch (error) {
@@ -228,9 +243,22 @@ export function useChapterManager(
   }, [projectPath, currentChapterId, onContentChange, isWebDemo]);
 
   // 更新草稿内容
+  // 注意：只有在内容真正变化且不是由加载触发时才标记为未保存
   const setDraftContent = useCallback((content: string) => {
-    setDraftContentState(content);
-    setSaveStatus("unsaved");
+    // 如果正在加载内容，不触发未保存状态
+    if (isLoadingContentRef.current) return;
+    
+    // 只在内容真正变化时更新状态
+    if (content !== draftContent) {
+      setDraftContentState(content);
+      // 注意：不在这里设置 saveStatus，避免加载内容时触发未保存
+      // saveStatus 由 useAutoSave 统一管理
+    }
+  }, [draftContent]);
+
+  // 直接更新保存状态（用于同步外部状态）
+  const setSaveStatusAction = useCallback((status: "saved" | "saving" | "unsaved") => {
+    setSaveStatus(status);
   }, []);
 
   // 初始化加载章节
@@ -253,7 +281,8 @@ export function useChapterManager(
   }, [currentChapterId, loadChapterContent, onContentChange]);
 
   // 监听 ChapterList 的章节切换事件
-  // 使用 isInitializedRef 避免初始化时的循环调用
+  // 重要：只监听来自 ChapterList 的事件，不监听自己 dispatch 的事件
+  // 通过检查 cause 字段来区分事件来源
   useEffect(() => {
     const handler = (event: Event) => {
       const { detail } = event as CustomEvent<{
@@ -265,7 +294,11 @@ export function useChapterManager(
       // 只处理当前项目的章节切换
       if (!detail || detail.projectPath !== projectPath) return;
 
-      // 初始化阶段忽略（初始化通过 refreshChapters 内部的 setCurrentChapterId 完成）
+      // 只监听来自 ChapterList 的事件（cause === "user" 或 "create" 或 "delete"）
+      // 不监听来自自己的事件（cause === "load" 或 undefined）
+      if (detail.cause === "load" || detail.cause === undefined) return;
+
+      // 初始化阶段忽略
       if (!isInitializedRef.current) return;
 
       // 如果章节 ID 变化，切换章节
@@ -299,5 +332,6 @@ export function useChapterManager(
     loadChapterContent,
     saveChapter,
     setDraftContent,
+    setSaveStatus: setSaveStatusAction,
   };
 }

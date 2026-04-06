@@ -1,6 +1,6 @@
 import type { Pipeline, PipelineRuntime } from '../core/pipeline'
 import type { ProviderConfig, ModelParameters } from '../types'
-import { ProviderManager } from '../provider'
+import { ProviderManager, validateProviderConfig } from '../provider'
 import { generateText } from 'ai'
 
 type TransformAction = 'polish' | 'expand' | 'condense' | 'restyle'
@@ -38,11 +38,41 @@ export class TransformPipeline implements Pipeline {
   readonly name = 'transform'
 
   async run(input: Record<string, unknown>, _runtime: PipelineRuntime): Promise<Record<string, unknown>> {
-    const provider = input.provider as ProviderConfig
-    const parameters = input.parameters as ModelParameters
-    const text = input.text as string
+    // P0 修复：验证必需输入字段
+    const provider = input.provider as ProviderConfig | undefined
+    const parameters = input.parameters as ModelParameters | undefined
+    const text = input.text as string | undefined
     const action = (input.action as TransformAction) ?? 'polish'
     const style = input.style as string | undefined
+
+    // 验证 provider 配置
+    if (!provider) {
+      throw new Error('Missing required field: provider configuration is required')
+    }
+    try {
+      validateProviderConfig(provider, 'transform pipeline')
+    } catch (err) {
+      throw new Error(`Invalid provider configuration in transform request: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
+    // 验证 parameters 配置
+    if (!parameters || typeof parameters !== 'object') {
+      throw new Error('Missing required field: parameters configuration is required')
+    }
+    if (!parameters.model || typeof parameters.model !== 'string') {
+      throw new Error('Missing required field: parameters.model must be a non-empty string')
+    }
+
+    // 验证 text 输入
+    if (!text || typeof text !== 'string') {
+      throw new Error('Missing required field: text must be a non-empty string')
+    }
+
+    // 验证 action
+    const validActions: TransformAction[] = ['polish', 'expand', 'condense', 'restyle']
+    if (!validActions.includes(action)) {
+      throw new Error(`Invalid action '${action}'. Expected one of: ${validActions.join(', ')}`)
+    }
 
     const providerManager = new ProviderManager()
     providerManager.addProvider(provider)

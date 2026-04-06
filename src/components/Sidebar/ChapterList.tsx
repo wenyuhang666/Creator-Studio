@@ -25,6 +25,9 @@ export default function ChapterList({ projectPath }: ChapterListProps) {
   const [creating, setCreating] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const selectionCauseRef = useRef<"user" | "create" | "delete" | "load">("load");
+  
+  // 未保存章节 ID（当用户点击其他章节时，如果当前章节有未保存的更改，存储目标章节 ID）
+  const pendingChapterIdRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,6 +80,55 @@ export default function ChapterList({ projectPath }: ChapterListProps) {
     window.addEventListener("creatorai:forceChapterSelection", onForceSelection);
     return () => window.removeEventListener("creatorai:forceChapterSelection", onForceSelection);
   }, [projectPath]);
+
+  // 监听保存状态变化 - 用于显示未保存图标
+  const [unsavedChapterId, setUnsavedChapterId] = useState<string | null>(null);
+  const [confirmSwitchOpen, setConfirmSwitchOpen] = useState(false);
+  
+  useEffect(() => {
+    const onSaveStatusChange = (event: Event) => {
+      const { detail } = event as CustomEvent<{ projectPath: string; chapterId: string; saveStatus: string }>;
+      if (!detail || detail.projectPath !== projectPath) return;
+      // 只有当是当前章节时，才更新未保存状态
+      if (detail.chapterId === currentChapterId) {
+        setUnsavedChapterId(detail.saveStatus === "unsaved" ? detail.chapterId : null);
+      }
+    };
+
+    window.addEventListener("creatorai:chapterSaveStatus", onSaveStatusChange);
+    return () => window.removeEventListener("creatorai:chapterSaveStatus", onSaveStatusChange);
+  }, [projectPath, currentChapterId]);
+
+  // 处理章节点击 - 检查未保存内容
+  const handleChapterClick = (chapterId: string) => {
+    if (chapterId === currentChapterId) return;
+    
+    // 如果当前章节有未保存的更改，弹出确认对话框
+    if (unsavedChapterId && unsavedChapterId === currentChapterId) {
+      pendingChapterIdRef.current = chapterId;
+      setConfirmSwitchOpen(true);
+      return;
+    }
+    
+    selectionCauseRef.current = "user";
+    setCurrentChapterId(chapterId);
+  };
+
+  // 确认切换 - 直接切换，放弃未保存内容
+  const handleConfirmSwitch = () => {
+    setConfirmSwitchOpen(false);
+    if (pendingChapterIdRef.current) {
+      selectionCauseRef.current = "user";
+      setCurrentChapterId(pendingChapterIdRef.current);
+      pendingChapterIdRef.current = null;
+    }
+  };
+
+  // 取消切换
+  const handleCancelSwitch = () => {
+    setConfirmSwitchOpen(false);
+    pendingChapterIdRef.current = null;
+  };
 
   useEffect(() => {
     const key = currentChapterStorageKey(projectPath);
@@ -214,10 +266,7 @@ export default function ChapterList({ projectPath }: ChapterListProps) {
               key={chapter.id}
               chapter={chapter}
               isActive={chapter.id === currentChapterId}
-              onSelect={() => {
-                selectionCauseRef.current = "user";
-                setCurrentChapterId(chapter.id);
-              }}
+              onSelect={() => handleChapterClick(chapter.id)}
               onRename={(newTitle) => void handleRename(chapter.id, newTitle)}
               onDelete={() => void handleDelete(chapter.id)}
             />
@@ -234,6 +283,24 @@ export default function ChapterList({ projectPath }: ChapterListProps) {
         chapterId={currentChapterId}
         chapterTitle={chapters.find((c) => c.id === currentChapterId)?.title ?? null}
       />
+
+      {/* 未保存内容确认对话框 */}
+      <Modal
+        title="⚠️ 有未保存的内容"
+        open={confirmSwitchOpen}
+        onCancel={handleCancelSwitch}
+        footer={[
+          <Button key="cancel" onClick={handleCancelSwitch}>
+            取消
+          </Button>,
+          <Button key="discard" danger onClick={handleConfirmSwitch}>
+            不保存，直接切换
+          </Button>,
+        ]}
+      >
+        <p>当前章节有未保存的更改。</p>
+        <p>如果直接切换，未保存的内容将会丢失！</p>
+      </Modal>
 
       <Modal
         title="新建章节"

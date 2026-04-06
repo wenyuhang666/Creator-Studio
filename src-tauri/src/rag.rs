@@ -438,17 +438,32 @@ fn embedder(project_root: &Path) -> Result<MutexGuard<'static, TextEmbedding>, S
     static EMBEDDER: OnceLock<Mutex<TextEmbedding>> = OnceLock::new();
     static INIT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+    // 如果已经有 embedder，尝试获取锁
     if let Some(embedder) = EMBEDDER.get() {
         return embedder
             .lock()
             .map_err(|_| "Embedding model lock poisoned".to_string());
     }
 
+    // 初始化锁
     let lock = INIT_LOCK.get_or_init(|| Mutex::new(()));
-    let _guard = lock
-        .lock()
-        .map_err(|_| "Embedding model init lock poisoned".to_string())?;
+    
+    // 尝试获取初始化锁，如果被污染则重试
+    let guard = match lock.lock() {
+        Ok(g) => g,
+        Err(_) => {
+            // 锁被污染了，创建一个新的
+            let new_lock = Mutex::new(());
+            let _ = INIT_LOCK.set(new_lock);
+            INIT_LOCK
+                .get()
+                .ok_or("Failed to create init lock")?
+                .lock()
+                .map_err(|_| "Embedding model init lock poisoned".to_string())?
+        }
+    };
 
+    // 双重检查（可能有其他线程已经初始化）
     if let Some(embedder) = EMBEDDER.get() {
         return embedder
             .lock()
@@ -457,6 +472,8 @@ fn embedder(project_root: &Path) -> Result<MutexGuard<'static, TextEmbedding>, S
 
     let model = init_embedding_model(project_root)?;
     let _ = EMBEDDER.set(Mutex::new(model));
+    drop(guard); // 释放初始化锁
+    
     EMBEDDER
         .get()
         .ok_or("Embedding model init failed".to_string())?
@@ -629,13 +646,27 @@ pub fn search(project_root: &Path, query: &str, top_k: usize) -> Result<Vec<RagH
     let mut index = if index_path(&project_root)?.exists() {
         load_index(&project_root)?
     } else {
-        let _ = build_index(&project_root)?;
-        load_index(&project_root)?
+        match build_index(&project_root) {
+            Ok(_) => load_index(&project_root)?,
+            Err(e) if e.contains("embedding model") || e.contains("ONNX") => {
+                // Embedding model init failed - return empty results gracefully
+                return Err(format!(
+                    "Embedding model unavailable: {e}. Please check ONNX Runtime installation."
+                ));
+            }
+            Err(e) => return Err(e),
+        }
     };
 
     if is_index_stale(&project_root, &index)? {
-        let _ = build_index(&project_root)?;
-        index = load_index(&project_root)?;
+        match build_index(&project_root) {
+            Ok(_) => index = load_index(&project_root)?,
+            Err(e) if e.contains("embedding model") || e.contains("ONNX") => {
+                // Embedding model init failed - use stale index if available
+                eprintln!("[rag] Build index failed: {e}, using stale index");
+            }
+            Err(e) => return Err(e),
+        }
     }
 
     let q = query.trim();
@@ -643,7 +674,15 @@ pub fn search(project_root: &Path, query: &str, top_k: usize) -> Result<Vec<RagH
         return Ok(Vec::new());
     }
 
-    let mut embedder = embedder(&project_root)?;
+    let mut embedder = match embedder(&project_root) {
+        Ok(e) => e,
+        Err(e) if e.contains("embedding model") || e.contains("ONNX") => {
+            return Err(format!(
+                "Embedding model unavailable: {e}. Please check ONNX Runtime installation."
+            ));
+        }
+        Err(e) => return Err(e),
+    };
     let q_emb = embedder
         .embed(vec![q], None)
         .map_err(|e| format!("Embedding failed: {e}"))?;

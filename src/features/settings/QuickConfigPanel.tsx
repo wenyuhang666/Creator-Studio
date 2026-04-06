@@ -128,8 +128,19 @@ export function QuickConfigPanel() {
               />
             </Form.Item>
 
-            {/* 自动检测提示 */}
-            {detectedPreset && (
+            {/* 检测到的服务商提示 */}
+            {detectedPreset && selectedPresetId !== detectedPreset.id && (
+              <Alert
+                type="info"
+                showIcon
+                icon={<CheckCircleOutlined />}
+                message={`检测到 ${detectedPreset.name}，但您选择了 ${selectedPreset?.name}`}
+                description={`API Key 将用于 ${selectedPreset?.name}。如需切换，请先在服务商下拉框中选择 ${detectedPreset.name}`}
+                style={{ marginBottom: 0 }}
+              />
+            )}
+            {/* 自动检测提示（匹配时） */}
+            {detectedPreset && selectedPresetId === detectedPreset.id && (
               <Alert
                 type="success"
                 showIcon

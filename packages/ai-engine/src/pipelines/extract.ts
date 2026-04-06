@@ -1,6 +1,6 @@
 import type { Pipeline, PipelineRuntime } from '../core/pipeline'
 import type { ProviderConfig, ModelParameters } from '../types'
-import { ProviderManager } from '../provider'
+import { ProviderManager, validateProviderConfig } from '../provider'
 import { generateText } from 'ai'
 
 const EXTRACT_SYSTEM_PROMPT = `你是一个小说文本分析专家。分析用户提供的小说文本，提取以下结构化信息。
@@ -52,9 +52,33 @@ export class ExtractPipeline implements Pipeline {
   readonly name = 'extract'
 
   async run(input: Record<string, unknown>, _runtime: PipelineRuntime): Promise<Record<string, unknown>> {
-    const provider = input.provider as ProviderConfig
-    const parameters = input.parameters as ModelParameters
-    const text = input.text as string
+    // P0/P1 修复：验证必需输入字段
+    const provider = input.provider as ProviderConfig | undefined
+    const parameters = input.parameters as ModelParameters | undefined
+    const text = input.text as string | undefined
+
+    // 验证 provider 配置
+    if (!provider) {
+      throw new Error('Missing required field: provider configuration is required')
+    }
+    try {
+      validateProviderConfig(provider, 'extract pipeline')
+    } catch (err) {
+      throw new Error(`Invalid provider configuration in extract request: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
+    // 验证 parameters 配置
+    if (!parameters || typeof parameters !== 'object') {
+      throw new Error('Missing required field: parameters configuration is required')
+    }
+    if (!parameters.model || typeof parameters.model !== 'string') {
+      throw new Error('Missing required field: parameters.model must be a non-empty string')
+    }
+
+    // 验证 text 输入
+    if (!text || typeof text !== 'string') {
+      throw new Error('Missing required field: text must be a non-empty string')
+    }
 
     const providerManager = new ProviderManager()
     providerManager.addProvider(provider)

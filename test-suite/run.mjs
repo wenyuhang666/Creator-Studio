@@ -8,6 +8,7 @@ import { runWindowsDemoSuite } from "./cases/windows-demo.mjs";
 import { runAiEngineSpawnSuite } from "./cases/ai-engine-spawn.mjs";
 import { runAiEngineToolSafetySuite } from "./cases/ai-engine-tool-safety.mjs";
 import { runAiEngineErrorRecoverySuite } from "./cases/ai-engine-error-recovery.mjs";
+import { runAiEngineFunctionalSuite } from "./cases/ai-engine-functional.mjs";
 
 const suite = process.argv[2] ?? "regression";
 
@@ -22,6 +23,7 @@ const suites = {
   "ai-engine-spawn": runAiEngineSpawnSuite,
   "ai-engine-tool-safety": runAiEngineToolSafetySuite,
   "ai-engine-error-recovery": runAiEngineErrorRecoverySuite,
+  "ai-engine-functional": runAiEngineFunctionalSuite,
 };
 
 const runner = suites[suite];

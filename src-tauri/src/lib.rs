@@ -15,8 +15,8 @@ mod summary;
 mod write_protection;
 
 use chapter::{
-    create_chapter, delete_chapter, get_chapter_content, list_chapters, rename_chapter,
-    reorder_chapters, save_chapter_content,
+    create_chapter, delete_chapter, export_all_chapters, export_chapter, get_chapter_content,
+    list_chapters, open_chapter_folder, rename_chapter, reorder_chapters, save_chapter_content,
 };
 use config::{GlobalConfig, ModelParameters, Provider};
 use file_ops::{
@@ -634,6 +634,9 @@ pub fn run() {
             rename_chapter,
             delete_chapter,
             reorder_chapters,
+            open_chapter_folder,
+            export_chapter,
+            export_all_chapters,
             list_sessions,
             create_session,
             rename_session,
@@ -646,7 +649,9 @@ pub fn run() {
             preview_import_txt,
             import_txt,
             ai_extract,
-            ai_transform
+            ai_transform,
+            export_chapter,
+            export_all_chapters
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

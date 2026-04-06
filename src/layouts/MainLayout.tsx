@@ -14,6 +14,7 @@ import { KnowledgePanel } from "../components/Knowledge";
 import { Sidebar } from "../components/Sidebar";
 import { SettingsPanel } from "../components/Settings";
 import { StatusBar } from "../components/StatusBar";
+import ExportModal from "../components/Export/ExportModal";
 import WorldbuildingPanel from "../components/Worldbuilding";
 import { useLayoutManager } from "../hooks/useLayoutManager";
 import { useChapterManager } from "../hooks/useChapterManager";
@@ -45,6 +46,7 @@ export default function MainLayout({
   onCloseProject,
 }: MainLayoutProps) {
   const [sidebarView, setSidebarView] = useState<SidebarView>("chapters");
+  const [exportModalOpen, setExportModalOpen] = useState(false);
   const editorRef = useRef<EditorHandle | null>(null);
 
   // 布局管理
@@ -52,6 +54,14 @@ export default function MainLayout({
 
   // 章节管理
   const chapter = useChapterManager(projectPath);
+
+  // 独立的保存状态管理 - 直接从 Editor 同步
+  const [editorSaveStatus, setEditorSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
+
+  // 统一保存状态：优先使用 Editor 的状态，如果没有则使用 chapter 的状态
+  const saveStatus = chapter.saveStatus !== editorSaveStatus && editorSaveStatus !== "saved" 
+    ? editorSaveStatus 
+    : chapter.saveStatus;
 
   // 字数统计
   const chapterWordCount = useMemo(() => {
@@ -89,6 +99,21 @@ export default function MainLayout({
     },
     [chapter],
   );
+
+  // 处理保存状态变化 - 同步 Editor 的自动保存状态
+  // 使用稳定的引用，避免依赖变化导致的重新渲染
+  const handleSaveStatusChangeRef = useRef((status: "saved" | "saving" | "unsaved") => {
+    setEditorSaveStatus(status);
+    // 同时更新 chapter 的状态，保持一致性
+    chapter.setSaveStatus(status);
+  });
+
+  // 监听章节切换 - 重置编辑器保存状态
+  useEffect(() => {
+    if (chapter.currentChapterId) {
+      setEditorSaveStatus("saved");
+    }
+  }, [chapter.currentChapterId]);
 
   // 监听章节选择事件
   useEffect(() => {
@@ -201,6 +226,7 @@ export default function MainLayout({
               initialContent={chapter.chapterContent}
               onChange={handleDraftChange}
               onSave={handleSave}
+              onSaveStatusChange={handleSaveStatusChangeRef.current}
             />
           </main>
 
@@ -224,7 +250,22 @@ export default function MainLayout({
         <StatusBar
           chapterWordCount={chapterWordCount}
           totalWordCount={totalWordCount}
-          saveStatus={chapter.saveStatus}
+          saveStatus={saveStatus}
+          projectPath={projectPath}
+          chapterId={chapter.currentChapterId}
+          chapterTitle={chapterTitle !== "未选择章节" ? chapterTitle : null}
+          onExport={() => setExportModalOpen(true)}
+        />
+        <ExportModal
+          projectPath={projectPath}
+          currentChapterId={chapter.currentChapterId}
+          currentChapterTitle={chapterTitle !== "未选择章节" ? chapterTitle : null}
+          chapters={chapter.chapters.map((c: { id: string; title: string }) => ({
+            id: c.id,
+            title: c.title,
+          }))}
+          open={exportModalOpen}
+          onClose={() => setExportModalOpen(false)}
         />
       </div>
     </div>

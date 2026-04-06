@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::project::{ChapterIndex, ChapterMeta};
 use crate::security::validate_path;
 use crate::write_protection;
+use tauri_plugin_opener::OpenerExt;
 
 fn now_unix_seconds() -> Result<u64, String> {
     SystemTime::now()
@@ -190,8 +191,17 @@ fn save_chapter_content_sync(
 
     let relative = chapter_txt_relative_path(&meta.id);
     let chapter_path = validate_path(&project_root, &relative)?;
+    
+    // 如果文件不存在，自动重新创建空文件
     if !chapter_path.exists() {
-        return Err("Chapter file does not exist".to_string());
+        // 确保父目录存在
+        if let Some(parent) = chapter_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create parent directory: {}", e))?;
+        }
+        // 创建空文件
+        std::fs::write(&chapter_path, "")
+            .map_err(|e| format!("Failed to create chapter file: {}", e))?;
     }
 
     let chapter_backup = write_protection::backup_existing_file(&project_root, &chapter_path)?;
@@ -410,4 +420,132 @@ pub async fn reorder_chapters(
     tauri::async_runtime::spawn_blocking(move || reorder_chapters_sync(project_path, chapter_ids))
         .await
         .map_err(|e| format!("Task join error: {e}"))?
+}
+
+fn export_chapter_sync(
+    project_path: String,
+    chapter_id: String,
+    output_path: String,
+) -> Result<String, String> {
+    let project_root = PathBuf::from(project_path);
+    ensure_project_exists(&project_root)?;
+    let project_root = project_root
+        .canonicalize()
+        .map_err(|e| format!("Invalid project path: {e}"))?;
+    validate_chapter_id(&chapter_id)?;
+
+    let index = read_index(&project_root)?;
+    let meta = index
+        .chapters
+        .iter()
+        .find(|c| c.id == chapter_id)
+        .ok_or_else(|| "Chapter not found".to_string())?;
+
+    let relative = chapter_txt_relative_path(&chapter_id);
+    let chapter_path = validate_path(&project_root, &relative)?;
+    let content = fs::read_to_string(&chapter_path)
+        .map_err(|e| format!("Failed to read chapter content: {e}"))?;
+
+    let output = PathBuf::from(&output_path);
+    if let Some(parent) = output.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create output directory: {e}"))?;
+        }
+    }
+
+    // 使用章节标题作为文件名
+    let safe_filename = meta.title.replace(|c: char| !c.is_alphanumeric() && c != ' ' && c != '-' && c != '_', "_");
+    let final_path = if output.is_dir() {
+        output.join(format!("{}.txt", safe_filename))
+    } else {
+        output.clone()
+    };
+
+    fs::write(&final_path, &content)
+        .map_err(|e| format!("Failed to write exported file: {e}"))?;
+
+    Ok(final_path.to_string_lossy().to_string())
+}
+
+fn export_all_chapters_sync(
+    project_path: String,
+    output_dir: String,
+) -> Result<Vec<String>, String> {
+    let project_root = PathBuf::from(project_path);
+    ensure_project_exists(&project_root)?;
+    let project_root = project_root
+        .canonicalize()
+        .map_err(|e| format!("Invalid project path: {e}"))?;
+
+    let index = read_index(&project_root)?;
+    let mut exported_paths: Vec<String> = Vec::new();
+
+    for meta in &index.chapters {
+        let relative = chapter_txt_relative_path(&meta.id);
+        let chapter_path = validate_path(&project_root, &relative)?;
+        let content = fs::read_to_string(&chapter_path)
+            .map_err(|e| format!("Failed to read chapter content: {e}"))?;
+
+        let safe_filename = meta.title.replace(|c: char| !c.is_alphanumeric() && c != ' ' && c != '-' && c != '_', "_");
+        let final_path = PathBuf::from(&output_dir).join(format!("{}.txt", safe_filename));
+
+        fs::write(&final_path, &content)
+            .map_err(|e| format!("Failed to write exported file: {e}"))?;
+
+        exported_paths.push(final_path.to_string_lossy().to_string());
+    }
+
+    Ok(exported_paths)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn export_chapter(
+    project_path: String,
+    chapter_id: String,
+    output_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        export_chapter_sync(project_path, chapter_id, output_path)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn export_all_chapters(
+    project_path: String,
+    output_dir: String,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        export_all_chapters_sync(project_path, output_dir)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_chapter_folder(
+    app: tauri::AppHandle,
+    project_path: String,
+    chapter_id: String,
+) -> Result<(), String> {
+    let project_root = PathBuf::from(&project_path);
+    ensure_project_exists(&project_root)?;
+    let project_root = project_root
+        .canonicalize()
+        .map_err(|e| format!("Invalid project path: {e}"))?;
+    validate_chapter_id(&chapter_id)?;
+
+    let relative = chapter_txt_relative_path(&chapter_id);
+    let chapter_path = validate_path(&project_root, &relative)?;
+    if !chapter_path.exists() {
+        return Err("Chapter file does not exist".to_string());
+    }
+
+    // 使用 Tauri opener 插件的 API 在文件管理器中显示文件
+    let path_str = chapter_path.to_string_lossy().to_string();
+    app.opener()
+        .reveal_item_in_dir(&path_str)
+        .map_err(|e| format!("Failed to open folder: {}", e))
 }

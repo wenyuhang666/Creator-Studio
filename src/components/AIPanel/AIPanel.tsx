@@ -806,6 +806,8 @@ export default function AIPanel({ projectPath }: AIPanelProps) {
     // Stop simulated streaming immediately (show final message faster).
     streamTokenRef.current += 1;
     if (!streamingContent) setStreamingContent("正在停止…");
+    // 立即设置 loading 为 false，确保 UI 状态正确更新
+    setLoading(false);
     try {
       await invoke("ai_cancel");
     } catch {

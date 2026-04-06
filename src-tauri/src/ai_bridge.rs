@@ -228,6 +228,23 @@ fn is_script_path(path: &Path) -> bool {
     matches!(path.extension().and_then(|s| s.to_str()), Some("ts" | "js"))
 }
 
+/// 获取运行时安装提示
+fn get_installation_hint(path: &Path) -> String {
+    if is_script_path(path) {
+        let runtime = match path.extension().and_then(|s| s.to_str()) {
+            Some("js") => "node",
+            Some("ts") => "bun",
+            _ => "node/bun",
+        };
+        format!(
+            "Please ensure `{}` is installed. Install from: https://nodejs.org or https://bun.sh",
+            runtime
+        )
+    } else {
+        "Please ensure the ai-engine binary is built. Run `npm run ai-engine:build`.".to_string()
+    }
+}
+
 fn spawn_ai_engine(path: &Path) -> Result<std::process::Child, String> {
     let mut cmd = if is_script_path(path) {
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or_default();
@@ -263,7 +280,7 @@ fn spawn_ai_engine(path: &Path) -> Result<std::process::Child, String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| {
             if is_script_path(path) && matches!(e.kind(), std::io::ErrorKind::NotFound) {
@@ -273,12 +290,30 @@ fn spawn_ai_engine(path: &Path) -> Result<std::process::Child, String> {
                     "bun"
                 };
                 return format!(
-                    "Failed to spawn ai-engine: {e}. `{runtime}` is required to run `{}`. Install the runtime or build the bundled sidecar via `npm run ai-engine:build`.",
-                    path.display(),
+                    "Failed to spawn ai-engine: {}. `{}` is required. Install: https://nodejs.org or https://bun.sh",
+                    e,
+                    runtime,
                 );
             }
-            format!("Failed to spawn ai-engine: {e}")
-        })
+            format!("Failed to spawn ai-engine: {}", e)
+        })?;
+
+    // P0-1 修复：验证进程能正常启动（不立即退出）
+    // 如果进程在 spawn 后立即退出，说明启动失败
+    if let Ok(Some(status)) = child.try_wait() {
+        eprintln!(
+            "[ai-bridge] ERROR: ai-engine exited immediately with status: {}. {}",
+            status,
+            get_installation_hint(path)
+        );
+        return Err(format!(
+            "ai-engine exited immediately with status: {}. {}. Please run 'npm run ai-engine:build' or check Node/Bun installation.",
+            status,
+            get_installation_hint(path)
+        ));
+    }
+
+    Ok(child)
 }
 
 fn format_tool_runs(runs: &[ToolCall]) -> String {
@@ -784,6 +819,7 @@ pub fn run_chat_with_events(
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<ChatResponse, String> {
     let ai_engine_path = get_ai_engine_path()?;
+    eprintln!("[ai-bridge] Using ai-engine at: {}", ai_engine_path.display());
 
     let cancel_flag = cancel.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
 
@@ -799,6 +835,20 @@ pub fn run_chat_with_events(
     let direct_return_tool_results = provider_base_url.contains("/geminicli/v1");
 
     let mut child = spawn_ai_engine(&ai_engine_path)?;
+
+    // P1-1 修复：验证进程启动成功
+    // 如果 ai-engine 启动失败或立即退出，立即返回有意义的错误
+    if let Ok(Some(status)) = child.try_wait() {
+        eprintln!(
+            "[ai-bridge] ERROR: ai-engine exited immediately with status: {}. {}",
+            status,
+            get_installation_hint(&ai_engine_path)
+        );
+        return Err(format!(
+            "ai-engine exited immediately with status: {}. Please run 'npm run ai-engine:build' or check Node/Bun installation.",
+            status
+        ));
+    }
 
     let mut stdin = child.stdin.take().ok_or("Failed to get stdin")?;
     let stdout = child.stdout.take().ok_or("Failed to get stdout")?;

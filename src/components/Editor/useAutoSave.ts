@@ -11,9 +11,27 @@ export function useAutoSave(content: string, { delay = 2000, onSave }: UseAutoSa
   const [lastSavedContent, setLastSavedContent] = useState(content);
   const timerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const isSavingRef = useRef(false);
-
+  
+  // 跟踪初始加载状态：避免首次加载时误判为"未保存"
+  const isInitializedRef = useRef(false);
+  
+  // 监听 content 变化，同步 lastSavedContent
   useEffect(() => {
-    if (content !== lastSavedContent) setStatus("unsaved");
+    // 首次加载（content 有内容但 lastSavedContent 为空）
+    if (!isInitializedRef.current && content && !lastSavedContent) {
+      setLastSavedContent(content);
+      setStatus("saved");
+      isInitializedRef.current = true;
+      return;
+    }
+    
+    // 标记已初始化
+    isInitializedRef.current = true;
+    
+    // 内容变化检测
+    if (content !== lastSavedContent) {
+      setStatus("unsaved");
+    }
   }, [content, lastSavedContent]);
 
   useEffect(() => {
@@ -35,7 +53,7 @@ export function useAutoSave(content: string, { delay = 2000, onSave }: UseAutoSa
       } finally {
         isSavingRef.current = false;
       }
-    }, delay);
+    }, delay) as unknown as ReturnType<typeof window.setTimeout>;
 
     return () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);

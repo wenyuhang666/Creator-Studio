@@ -1,6 +1,6 @@
 import { generateText } from 'ai'
 import type { AgentResult, Message, ModelParameters, ToolCallRequest, ToolCallResult } from './types'
-import { ProviderManager } from './provider'
+import { ProviderManager, validateProviderConfig } from './provider'
 import { getToolsForSDK } from './tools'
 
 export interface AgentContext {
@@ -20,6 +20,36 @@ export class Agent {
     this.providerManager = providerManager
   }
 
+  // P2 修复：验证模型参数
+  private validateModelParameters(params: ModelParameters, providerId: string): void {
+    if (!params) {
+      throw new Error(`[Agent] Missing model parameters for provider '${providerId}'`)
+    }
+    if (!params.model || typeof params.model !== 'string' || params.model.trim() === '') {
+      throw new Error(`[Agent] Invalid model name: model must be a non-empty string`)
+    }
+  }
+
+  // P2 修复：验证消息数组
+  private validateMessages(messages: Message[] | undefined, context: string): void {
+    if (!Array.isArray(messages)) {
+      throw new Error(`[Agent] ${context}: messages must be an array`)
+    }
+    // 检查每条消息的有效性
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i]
+      if (!msg || typeof msg !== 'object') {
+        throw new Error(`[Agent] ${context}: messages[${i}] is invalid`)
+      }
+      if (!msg.role || typeof msg.role !== 'string') {
+        throw new Error(`[Agent] ${context}: messages[${i}] is missing or has invalid 'role'`)
+      }
+      if (!msg.content || typeof msg.content !== 'string') {
+        throw new Error(`[Agent] ${context}: messages[${i}] is missing or has invalid 'content'`)
+      }
+    }
+  }
+
   // 纯文本补全（不启用工具）
   async complete(messages: Message[], context: Omit<AgentContext, 'executeTools'>): Promise<AgentResult> {
     const provider = this.providerManager.getProvider(context.providerId)
@@ -27,9 +57,15 @@ export class Agent {
       throw new Error(`Provider not found: ${context.providerId}`)
     }
 
-    if (provider.models.length > 0 && !provider.models.includes(context.parameters.model)) {
+    // P2 修复：验证参数
+    this.validateModelParameters(context.parameters, context.providerId)
+    this.validateMessages(messages, 'complete')
+
+    // P1 修复：安全访问 models 数组
+    const models = provider.models
+    if (Array.isArray(models) && models.length > 0 && !models.includes(context.parameters.model)) {
       throw new Error(
-        `Model not allowed by provider (${context.providerId}): ${context.parameters.model}`,
+        `Model not allowed by provider (${context.providerId}): ${context.parameters.model}. Allowed models: ${models.join(', ')}`,
       )
     }
 
@@ -68,9 +104,15 @@ export class Agent {
       throw new Error(`Provider not found: ${context.providerId}`)
     }
 
-    if (provider.models.length > 0 && !provider.models.includes(context.parameters.model)) {
+    // P2 修复：验证参数
+    this.validateModelParameters(context.parameters, context.providerId)
+    this.validateMessages(messages, 'run')
+
+    // P1 修复：安全访问 models 数组
+    const models = provider.models
+    if (Array.isArray(models) && models.length > 0 && !models.includes(context.parameters.model)) {
       throw new Error(
-        `Model not allowed by provider (${context.providerId}): ${context.parameters.model}`,
+        `Model not allowed by provider (${context.providerId}): ${context.parameters.model}. Allowed models: ${models.join(', ')}`,
       )
     }
 

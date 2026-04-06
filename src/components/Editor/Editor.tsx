@@ -132,10 +132,15 @@ function Editor({
 
   useEffect(() => {
     onSaveStatusChange?.(status);
-    window.dispatchEvent(
-      new CustomEvent("creatorai:saveStatus", { detail: { projectPath, saveStatus: status } }),
-    );
-  }, [status, onSaveStatusChange, projectPath]);
+    // 广播章节保存状态，让 ChapterList 显示未保存图标
+    if (chapterId) {
+      window.dispatchEvent(
+        new CustomEvent("creatorai:chapterSaveStatus", { 
+          detail: { projectPath, chapterId, saveStatus: status } 
+        }),
+      );
+    }
+  }, [status, onSaveStatusChange, projectPath, chapterId]);
 
   useEffect(() => {
     onChange(value);
@@ -394,22 +399,51 @@ function Editor({
     };
   }, [chapterId, projectPath, disableInlineCompletion, editorSettings]);
 
+  // 跟踪上一次的 chapterId 和 initialContent，用于检测变化
+  const prevChapterIdRef = useRef(chapterId);
+  const prevInitialContentRef = useRef(initialContent);
+
   useEffect(() => {
     if (!chapterId) return;
-    if (hasUnsavedChanges) return;
-    resetAutoSave(initialContent);
-    setValue(initialContent);
+    
+    const chapterChanged = prevChapterIdRef.current !== chapterId;
+    const contentChanged = prevInitialContentRef.current !== initialContent;
+    
+    // 更新 refs
+    prevChapterIdRef.current = chapterId;
+    prevInitialContentRef.current = initialContent;
+    
+    if (chapterChanged) {
+      // 章节切换，强制重置
+      resetAutoSave(initialContent);
+      setValue(initialContent);
 
-    const view = viewRef.current;
-    if (!view) return;
-    view.setState(
-      EditorState.create({
-        doc: initialContent,
-        extensions: extensionsRef.current,
-      }),
-    );
-    setCanUndoState(undoDepth(view.state) > 0);
-    setCanRedoState(redoDepth(view.state) > 0);
+      const view = viewRef.current;
+      if (!view) return;
+      view.setState(
+        EditorState.create({
+          doc: initialContent,
+          extensions: extensionsRef.current,
+        }),
+      );
+      setCanUndoState(undoDepth(view.state) > 0);
+      setCanRedoState(redoDepth(view.state) > 0);
+    } else if (contentChanged) {
+      // initialContent 从外部更新（从服务器加载），同步更新编辑器
+      // 不管 hasUnsavedChanges 是什么，只要内容真的变了就应该更新
+      resetAutoSave(initialContent);
+      setValue(initialContent);
+      
+      const view = viewRef.current;
+      if (view) {
+        view.setState(
+          EditorState.create({
+            doc: initialContent,
+            extensions: extensionsRef.current,
+          }),
+        );
+      }
+    }
   }, [chapterId, initialContent, hasUnsavedChanges, resetAutoSave]);
 
   const prevStatusRef = useRef<SaveStatus>(status);

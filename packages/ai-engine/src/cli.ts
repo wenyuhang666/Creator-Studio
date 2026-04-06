@@ -67,18 +67,54 @@ registry.register(new TransformPipeline())
 
 // --- Main ---
 
+/**
+ * 格式化错误对象为友好的错误消息
+ */
+function formatError(error: unknown, context?: string): string {
+  if (error instanceof Error) {
+    // 如果已经有上下文前缀，直接返回
+    if (context && error.message.startsWith(`[${context}]`)) {
+      return error.message
+    }
+    // 添加上下文
+    if (context) {
+      return `[${context}] ${error.message}`
+    }
+    return error.message
+  }
+  return String(error)
+}
+
 async function main() {
-  const input = (await readJsonFromStdin()) as Record<string, unknown>
+  let input: Record<string, unknown>
+  
+  // P2 修复：更好的 JSON 解析错误处理
+  try {
+    input = (await readJsonFromStdin()) as Record<string, unknown>
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      writeJson({ type: 'error', message: 'Invalid JSON input: please check your request format' })
+    } else if (error instanceof Error && error.message === 'EOF before complete JSON') {
+      writeJson({ type: 'error', message: 'No input received: please send a valid JSON request' })
+    } else {
+      writeJson({ type: 'error', message: formatError(error, 'input parsing') })
+    }
+    process.exit(1)
+  }
 
   const type = input.type as string | undefined
   if (!type) {
-    writeJson({ type: 'error', message: 'Missing request type' })
+    writeJson({ type: 'error', message: 'Missing required field: "type" is required to specify the operation (e.g., chat, transform, extract)' })
     process.exit(1)
   }
 
   const pipeline = registry.get(type)
   if (!pipeline) {
-    writeJson({ type: 'error', message: `Unknown pipeline: ${type}. Available: ${registry.names().join(', ')}` })
+    const available = registry.names().join(', ')
+    writeJson({ 
+      type: 'error', 
+      message: `Unknown pipeline type "${type}". Available types: ${available}. If you're trying to use a feature like polishing or text transformation, please use "transform".` 
+    })
     process.exit(1)
   }
 
@@ -91,7 +127,9 @@ async function main() {
     const result = await pipeline.run(input, runtime)
     writeJson(result)
   } catch (error) {
-    writeJson({ type: 'error', message: error instanceof Error ? error.message : String(error) })
+    // P2 修复：提供更友好的错误消息
+    const errorMessage = formatError(error, pipeline.name)
+    writeJson({ type: 'error', message: errorMessage })
     process.exit(1)
   }
 }

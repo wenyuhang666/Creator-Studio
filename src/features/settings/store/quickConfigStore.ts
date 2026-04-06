@@ -65,24 +65,20 @@ export const useQuickConfigStore = create<QuickConfigState>((set, get) => ({
   error: null,
 
   setApiKey: (key) => {
+    const { selectedPresetId } = get();
     set({ apiKey: key, isDetecting: true });
 
     // 防抖检测
     setTimeout(() => {
       const preset = detectProvider(key);
-      if (preset) {
-        set({
-          detectedPreset: preset,
-          isDetecting: false,
-          selectedPresetId: preset.id,
-          selectedModel: preset.recommendedModels[0] || "",
-        });
-      } else {
-        set({
-          detectedPreset: null,
-          isDetecting: false,
-        });
-      }
+      set({
+        detectedPreset: preset,
+        isDetecting: false,
+        // ⚠️ 仅当用户尚未手动选择时，才自动填充
+        // 用户手动选择后，优先使用用户选择，保持 API Key 选择权在用户手中
+        selectedPresetId: preset && selectedPresetId === "deepseek" ? preset.id : selectedPresetId,
+        selectedModel: preset && selectedPresetId === "deepseek" ? (preset.recommendedModels[0] || "") : get().selectedModel,
+      });
     }, 300);
   },
 
