@@ -1745,12 +1745,9 @@ main().catch((err) => {
         request.allow_write = false;
 
         let response = run_chat(request).expect("run_chat");
-        assert_eq!(response.tool_calls.len(), 1);
-        assert!(matches!(response.tool_calls[0].status, ToolCallStatus::Error));
-        assert_eq!(
-            response.tool_calls[0].error.as_deref(),
-            Some("Tool not allowed before user confirmation")
-        );
+        // P1 修复：草稿阶段写入工具被跳过，不添加到 tool_calls 中
+        // 这是预期行为：前端不应显示错误，而是静默跳过
+        assert_eq!(response.tool_calls.len(), 0, "草稿阶段写入工具应被跳过，不包含在 tool_calls 中");
         let after = fs::read_to_string(temp.path.join("chapters/chapter_003.txt")).unwrap();
         assert_eq!(after, "hello\n");
     }
