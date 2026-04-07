@@ -1,45 +1,41 @@
 /**
- * Concurrency control middleware.
+ * Concurrency control for streaming routes.
  *
- * Limits the number of active SSE streams to prevent resource exhaustion.
- * Desktop single-user scenario: 3 concurrent streams is sufficient
- * (1 chat + 1 complete + 1 transform).
+ * Since Hono SSE middleware returns Response before the stream finishes,
+ * a standard middleware can't track stream lifetime. Instead, this module
+ * exposes acquire/release functions that routes call manually.
  *
- * Returns 429 with Retry-After when limit is exceeded.
+ * Usage:
+ *   const limiter = createConcurrencyLimiter(3)
+ *   // In route:
+ *   if (!limiter.tryAcquire()) return c.json({error: '...'}, 429)
+ *   try { await doStreaming() } finally { limiter.release() }
  */
-import { createMiddleware } from 'hono/factory'
 
-const DEFAULT_MAX_CONCURRENT = 3
-
-interface ConcurrencyState {
-  active: number
-  max: number
+export interface ConcurrencyLimiter {
+  /** Try to acquire a slot. Returns true if acquired, false if at limit. */
+  tryAcquire(): boolean
+  /** Release a previously acquired slot. */
+  release(): void
+  /** Current state for health reporting. */
+  getState(): { active: number; max: number }
 }
 
-export function concurrencyMiddleware(maxConcurrent: number = DEFAULT_MAX_CONCURRENT) {
-  const state: ConcurrencyState = { active: 0, max: maxConcurrent }
+export function createConcurrencyLimiter(maxConcurrent: number = 3): ConcurrencyLimiter {
+  let active = 0
+  const max = maxConcurrent
 
-  const middleware = createMiddleware(async (c, next) => {
-    if (state.active >= state.max) {
-      return c.json(
-        {
-          error: `Too many concurrent requests (${state.active}/${state.max}). Please wait for current requests to complete.`,
-          retry_after_seconds: 2,
-        },
-        429,
-      )
-    }
-
-    state.active++
-    try {
-      await next()
-    } finally {
-      state.active--
-    }
-  })
-
-  // Expose state for testing and health reporting
-  return Object.assign(middleware, {
-    getState: () => ({ ...state }),
-  })
+  return {
+    tryAcquire() {
+      if (active >= max) return false
+      active++
+      return true
+    },
+    release() {
+      if (active > 0) active--
+    },
+    getState() {
+      return { active, max }
+    },
+  }
 }

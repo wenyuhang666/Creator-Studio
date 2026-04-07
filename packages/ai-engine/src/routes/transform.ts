@@ -8,6 +8,7 @@
  */
 import { Hono } from 'hono'
 import { streamTextRoute } from '../core/stream-helpers.js'
+import type { ConcurrencyLimiter } from '../middleware/concurrency.js'
 import type { ProviderConfig, ModelParameters } from '../types.js'
 
 type TransformAction = 'polish' | 'expand' | 'condense' | 'restyle'
@@ -46,7 +47,7 @@ interface TransformRequest {
   style?: string
 }
 
-export function transformRoute() {
+export function transformRoute(limiter?: ConcurrencyLimiter) {
   const route = new Hono()
 
   route.post('/', async (c) => {
@@ -80,6 +81,7 @@ export function transformRoute() {
         action,
         text_length: body.text.length,
       },
+      concurrencyLimiter: limiter,
     })
   })
 

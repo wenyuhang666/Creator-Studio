@@ -9,7 +9,7 @@ import { serve } from '@hono/node-server'
 import { logger } from 'hono/logger'
 import { authMiddleware } from './middleware/auth.js'
 import { bodyLimitMiddleware } from './middleware/body-limit.js'
-import { concurrencyMiddleware } from './middleware/concurrency.js'
+import { createConcurrencyLimiter } from './middleware/concurrency.js'
 import { errorMiddleware } from './middleware/error.js'
 import { requestIdMiddleware } from './middleware/request-id.js'
 import { healthRoute } from './routes/health.js'
@@ -37,18 +37,16 @@ export function createApp(sharedSecret?: string) {
   }
   app.use('/api/*', bodyLimitMiddleware())
 
-  // Concurrency limit for streaming routes (3 concurrent max)
-  const streamingRoutes = ['/api/chat', '/api/complete', '/api/transform']
-  for (const path of streamingRoutes) {
-    app.use(`${path}/*`, concurrencyMiddleware())
-  }
+  // Shared concurrency limiter for streaming routes (3 concurrent max)
+  // Passed to routes so they can acquire/release around the actual stream lifetime.
+  const streamLimiter = createConcurrencyLimiter(3)
 
   // Routes
   app.route('/health', healthRoute(PROTOCOL_VERSION))
-  app.route('/api/chat', chatRoute())
-  app.route('/api/complete', completeRoute())
+  app.route('/api/chat', chatRoute(streamLimiter))  // chat manages limiter manually due to tool calling
+  app.route('/api/complete', completeRoute(streamLimiter))
   app.route('/api/extract', extractRoute())
-  app.route('/api/transform', transformRoute())
+  app.route('/api/transform', transformRoute(streamLimiter))
   app.route('/api/compact', compactRoute())
   app.route('/api/models', modelsRoute())
 

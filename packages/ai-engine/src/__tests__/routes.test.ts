@@ -70,6 +70,8 @@ describe('POST /api/transform', () => {
       })
       // Should be SSE (not 400 or 500)
       expect(res.headers.get('content-type')).toContain('text/event-stream')
+      // Consume body to ensure stream cleanup (concurrency limiter release)
+      await res.text()
     }
   })
 

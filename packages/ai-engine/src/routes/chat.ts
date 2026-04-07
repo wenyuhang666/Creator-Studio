@@ -16,6 +16,7 @@ import { streamSSE } from 'hono/streaming'
 import { initModel, structLog, sanitizeError } from '../core/stream-helpers.js'
 import { streamText } from 'ai'
 import { getToolsForSDK } from '../tools.js'
+import type { ConcurrencyLimiter } from '../middleware/concurrency.js'
 import type { ProviderConfig, ModelParameters, Message, ToolCallRequest, ToolCallResult } from '../types.js'
 
 interface ChatRequest {
@@ -29,7 +30,7 @@ interface ChatRequest {
   allowWrite?: boolean
 }
 
-export function chatRoute() {
+export function chatRoute(limiter?: ConcurrencyLimiter) {
   const route = new Hono()
 
   route.post('/', async (c) => {
@@ -38,6 +39,14 @@ export function chatRoute() {
 
     if (!body.provider || !body.parameters || !body.systemPrompt || !body.messages) {
       return c.json({ error: 'Missing required fields: provider, parameters, systemPrompt, messages' }, 400)
+    }
+
+    // Concurrency check before starting stream
+    if (limiter && !limiter.tryAcquire()) {
+      return c.json({
+        error: 'Too many concurrent requests. Please wait for current requests to complete.',
+        retry_after_seconds: 2,
+      }, 429)
     }
 
     const executeTools = body.toolCallbackUrl
@@ -157,6 +166,8 @@ export function chatRoute() {
         await stream.writeSSE({
           data: JSON.stringify({ type: 'error', message: sanitizeError(rawMessage) }),
         })
+      } finally {
+        limiter?.release()
       }
     })
   })

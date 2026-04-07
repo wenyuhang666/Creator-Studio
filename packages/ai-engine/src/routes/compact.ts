@@ -5,6 +5,7 @@
 import { Hono } from 'hono'
 import { generateCompactSummary } from '../compact.js'
 import { structLog, sanitizeError } from '../core/stream-helpers.js'
+import { withRetry } from '../middleware/retry.js'
 import type { ProviderConfig, ModelParameters, Message } from '../types.js'
 
 interface CompactRequest {
@@ -33,12 +34,15 @@ export function compactRoute() {
     const startMs = Date.now()
 
     try {
-      const summary = await generateCompactSummary({
-        provider: body.provider,
-        parameters: body.parameters,
-        messages: body.messages,
-        abortSignal: c.req.raw.signal,
-      })
+      const summary = await withRetry(
+        () => generateCompactSummary({
+          provider: body.provider,
+          parameters: body.parameters,
+          messages: body.messages,
+          abortSignal: c.req.raw.signal,
+        }),
+        { abortSignal: c.req.raw.signal },
+      )
 
       structLog('info', requestId, 'compact.done', {
         duration_ms: Date.now() - startMs,

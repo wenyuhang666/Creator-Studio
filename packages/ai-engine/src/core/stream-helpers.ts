@@ -11,6 +11,7 @@
 import { streamSSE } from 'hono/streaming'
 import { streamText } from 'ai'
 import { ProviderManager } from '../provider.js'
+import type { ConcurrencyLimiter } from '../middleware/concurrency.js'
 import type { Context } from 'hono'
 import type { ProviderConfig } from '../types.js'
 
@@ -66,6 +67,8 @@ export interface StreamRouteOptions {
   startLogExtra?: Record<string, unknown>
   /** Called on each step finish (for tool call events in chat) */
   onStepFinish?: Parameters<typeof streamText>[0]['onStepFinish']
+  /** Optional concurrency limiter — release is called when stream ends */
+  concurrencyLimiter?: ConcurrencyLimiter
 }
 
 /**
@@ -75,9 +78,17 @@ export interface StreamRouteOptions {
  * Error messages sent to clients are sanitized.
  */
 export function streamTextRoute(opts: StreamRouteOptions) {
-  const { c, routeName, provider, modelId, streamTextOptions, buildDoneExtra, startLogExtra, onStepFinish } = opts
+  const { c, routeName, provider, modelId, streamTextOptions, buildDoneExtra, startLogExtra, onStepFinish, concurrencyLimiter } = opts
   const requestId = (c.get('requestId') as string) ?? ''
   const startMs = Date.now()
+
+  // Check concurrency limit before starting stream
+  if (concurrencyLimiter && !concurrencyLimiter.tryAcquire()) {
+    return c.json({
+      error: `Too many concurrent requests. Please wait for current requests to complete.`,
+      retry_after_seconds: 2,
+    }, 429)
+  }
 
   structLog('info', requestId, `${routeName}.start`, startLogExtra ?? {})
 
@@ -139,6 +150,8 @@ export function streamTextRoute(opts: StreamRouteOptions) {
       await stream.writeSSE({
         data: JSON.stringify({ type: 'error', message: sanitizeError(rawMessage) }),
       })
+    } finally {
+      concurrencyLimiter?.release()
     }
   })
 }

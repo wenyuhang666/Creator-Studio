@@ -7,6 +7,7 @@
 import { Hono } from 'hono'
 import { generateText } from 'ai'
 import { initModel, structLog, sanitizeError } from '../core/stream-helpers.js'
+import { withRetry } from '../middleware/retry.js'
 import type { ProviderConfig, ModelParameters } from '../types.js'
 
 const EXTRACT_SYSTEM_PROMPT = `你是一个小说文本分析专家。分析用户提供的小说文本，提取以下结构化信息。
@@ -78,7 +79,7 @@ export function extractRoute() {
     try {
       const model = initModel(body.provider, body.parameters.model)
 
-      const result = await generateText({
+      const result = await withRetry(() => generateText({
         model,
         messages: [
           { role: 'system', content: EXTRACT_SYSTEM_PROMPT },
@@ -88,7 +89,7 @@ export function extractRoute() {
         temperature: 0.1,
         maxTokens: body.parameters.maxTokens ?? 4000,
         abortSignal: c.req.raw.signal,
-      } as any)
+      } as any), { abortSignal: c.req.raw.signal })
 
       const content = (result as any).text ?? ''
 

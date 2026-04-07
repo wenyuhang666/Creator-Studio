@@ -8,6 +8,7 @@
  */
 import { Hono } from 'hono'
 import { streamTextRoute } from '../core/stream-helpers.js'
+import type { ConcurrencyLimiter } from '../middleware/concurrency.js'
 import type { ProviderConfig, ModelParameters, Message } from '../types.js'
 
 interface CompleteRequest {
@@ -17,7 +18,7 @@ interface CompleteRequest {
   messages: Message[]
 }
 
-export function completeRoute() {
+export function completeRoute(limiter?: ConcurrencyLimiter) {
   const route = new Hono()
 
   route.post('/', async (c) => {
@@ -49,6 +50,7 @@ export function completeRoute() {
         provider: body.provider.id,
         model: body.parameters.model,
       },
+      concurrencyLimiter: limiter,
     })
   })
 
