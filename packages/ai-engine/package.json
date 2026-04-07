@@ -8,7 +8,9 @@
   },
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node",
-    "test": "bun test"
+    "test": "bun test",
+    "pkg": "npm run build && pkg dist/cli.js --targets node18-win-x64 --output ../src-tauri/bin/ai-engine.exe",
+    "pkg:all": "npm run build && pkg dist/cli.js --targets node18-win-x64,node18-linux-x64,node18-macos-x64 --output ../src-tauri/bin/ai-engine"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^0.1.0",
@@ -17,6 +19,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "pkg": "^5.8.1",
     "tsup": "^8.5.1",
     "typescript": "^5.0.0"
   }

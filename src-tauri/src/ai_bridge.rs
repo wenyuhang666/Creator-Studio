@@ -80,14 +80,16 @@ fn current_exe_dir() -> Option<PathBuf> {
 }
 
 fn find_ai_engine_in_dir(dir: &Path) -> Option<PathBuf> {
+    // P1 修复：优先使用 ai-engine.exe（独立可执行文件，不需要 Node.js）
+    // 这样 MSI 安装后就不需要依赖 Node.js 运行时了
     let direct_names = if cfg!(windows) {
         vec![
-            "ai-engine.js".to_string(),
-            "ai-engine.exe".to_string(),
+            "ai-engine.exe".to_string(),  // 优先：独立可执行文件
+            "ai-engine.js".to_string(),   // 回退：需要 Node.js
             "ai-engine".to_string(),
         ]
     } else {
-        vec!["ai-engine.js".to_string(), "ai-engine".to_string()]
+        vec!["ai-engine".to_string(), "ai-engine.js".to_string()]
     };
 
     for name in direct_names {

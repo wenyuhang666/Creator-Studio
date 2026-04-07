@@ -687,11 +687,14 @@ export default function AIPanel({ projectPath }: AIPanelProps) {
       const parsed = stripContinueDraftMarker(reply);
       const displayReply = parsed.content;
 
+      // P1 修复：优化模拟流式输出速度，提升用户体验
+      // 原先：长文本 10ms/80字符，短文本 16ms/40字符 → 1000字需 200ms
+      // 优化后：统一使用更快速度，1000字约 30-50ms（视觉上接近即时）
       const streamPromise = realStreamingRef.current
         ? Promise.resolve()
         : (async () => {
-            const chunkSize = displayReply.length > 3000 ? 80 : 40;
-            const intervalMs = displayReply.length > 3000 ? 10 : 16;
+            const chunkSize = displayReply.length > 3000 ? 200 : 100;
+            const intervalMs = 5; // 统一 5ms 间隔，更流畅
             for (let i = 0; i < displayReply.length; i += chunkSize) {
               if (streamTokenRef.current !== streamToken) return;
               setStreamingContent(displayReply.slice(0, i + chunkSize));
@@ -721,10 +724,13 @@ export default function AIPanel({ projectPath }: AIPanelProps) {
 
       await streamPromise;
 
+      // P1 修复：确保 loading=false 在添加消息之前或同时设置
+      // 这样可以避免 React 批量渲染时出现 "思考中" 状态
       const uiAssistant = toPanelMessage(createdAssistant);
+      setLoading(false); // 先设置 loading=false，避免显示 "思考中"
+      setStreamingContent(""); // 清空流式内容
+      setPendingToolCalls([]); // 清空待处理的工具调用
       setMessagesInSession((prev) => [...prev, uiAssistant]);
-      setStreamingContent("");
-      setPendingToolCalls([]);
 
       const appended = toolCalls.some((c) => c.name === "append" && c.status === "success");
       if (appended) {

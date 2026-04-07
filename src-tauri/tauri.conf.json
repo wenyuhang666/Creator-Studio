@@ -28,6 +28,7 @@
       "bin/ai-engine"
     ],
     "resources": [
+      "bin/ai-engine.exe",
       "bin/ai-engine.js"
     ],
     "icon": [
