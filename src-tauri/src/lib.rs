@@ -1,6 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod ai_bridge;
 mod ai_daemon;
+mod ai_proxy;
 mod chapter;
 mod config;
 mod file_ops;
@@ -216,7 +217,10 @@ fn set_default_parameters(parameters: ModelParameters) -> Result<(), String> {
 // ===== Models Commands =====
 
 #[tauri::command(rename_all = "camelCase")]
-async fn refresh_provider_models(provider_id: String) -> Result<Vec<String>, String> {
+async fn refresh_provider_models(
+    daemon: tauri::State<'_, Arc<ai_daemon::AIDaemon>>,
+    provider_id: String,
+) -> Result<Vec<String>, String> {
     let provider = {
         let config = config::load_config()?;
         config
@@ -237,9 +241,11 @@ async fn refresh_provider_models(provider_id: String) -> Result<Vec<String>, Str
         config::ProviderType::Anthropic => "anthropic",
     }
     .to_string();
-    let api_key_for_task = api_key.clone();
+
+    // Use daemon HTTP proxy instead of spawning one-shot process
+    let daemon_arc = daemon.inner().clone();
     let models = tauri::async_runtime::spawn_blocking(move || {
-        ai_bridge::fetch_models(&provider_type, &base_url, &api_key_for_task)
+        ai_proxy::fetch_models(&daemon_arc, &provider_type, &base_url, &api_key)
     })
     .await
     .map_err(|e| format!("refresh_provider_models join error: {e}"))??;
@@ -422,6 +428,11 @@ fn ai_complete_cancel(runtime: tauri::State<AiCompleteRuntime>) -> Result<(), St
     }
 }
 
+// ai_complete and ai_chat still use ai_bridge (legacy JSONL) because:
+// 1. ai_chat needs tool execution (read/write/append/search/rag) which runs in Rust
+// 2. ai_complete needs cancel support via AtomicBool
+// These will migrate to daemon once the Rust tool execution HTTP server is implemented.
+
 #[tauri::command(rename_all = "camelCase")]
 async fn ai_complete(
     runtime: tauri::State<'_, AiCompleteRuntime>,
@@ -547,12 +558,14 @@ async fn ai_chat(
 
 #[tauri::command(rename_all = "camelCase")]
 async fn ai_extract(
+    daemon: tauri::State<'_, Arc<ai_daemon::AIDaemon>>,
     provider: serde_json::Value,
     parameters: serde_json::Value,
     text: String,
 ) -> Result<serde_json::Value, String> {
+    let daemon_arc = daemon.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        ai_bridge::run_extract(provider, parameters, text)
+        ai_proxy::run_extract(&daemon_arc, provider, parameters, text)
     })
     .await
     .map_err(|e| format!("ai_extract join error: {e}"))?
@@ -560,14 +573,16 @@ async fn ai_extract(
 
 #[tauri::command(rename_all = "camelCase")]
 async fn ai_transform(
+    daemon: tauri::State<'_, Arc<ai_daemon::AIDaemon>>,
     provider: serde_json::Value,
     parameters: serde_json::Value,
     text: String,
     action: String,
     style: Option<String>,
 ) -> Result<String, String> {
+    let daemon_arc = daemon.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        ai_bridge::run_transform(provider, parameters, text, action, style)
+        ai_proxy::run_transform(&daemon_arc, provider, parameters, text, action, style)
     })
     .await
     .map_err(|e| format!("ai_transform join error: {e}"))?
@@ -578,14 +593,29 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .setup(|_| {
+        .setup(|app| {
             cleanup_reinstall_state_if_needed()?;
             config::load_config()
                 .map(|_| ())
-                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })
+                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+
+            // Start AI daemon in background
+            use tauri::Manager;
+            let daemon = app.state::<Arc<ai_daemon::AIDaemon>>();
+            if let Ok(engine_path) = ai_bridge::get_ai_engine_path() {
+                match daemon.start(&engine_path) {
+                    Ok(port) => eprintln!("[setup] AI daemon started on port {port}"),
+                    Err(e) => eprintln!("[setup] AI daemon start failed (will retry on first request): {e}"),
+                }
+            } else {
+                eprintln!("[setup] AI engine path not found (will retry on first request)");
+            }
+
+            Ok(())
         })
         .manage(AiChatRuntime::default())
         .manage(AiCompleteRuntime::default())
+        .manage(Arc::new(ai_daemon::AIDaemon::new()))
         .invoke_handler(tauri::generate_handler![
             greet,
             get_config,
