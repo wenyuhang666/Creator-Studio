@@ -238,7 +238,6 @@ ${params.writingPreset}
 export default function AIPanel({ projectPath }: AIPanelProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const mode: SessionMode = "Continue";
   const [messagesInSession, setMessagesInSession] = useState<PanelMessage[]>([]);
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
   const [currentChapterTitle, setCurrentChapterTitle] = useState<string | null>(null);
@@ -339,7 +338,7 @@ export default function AIPanel({ projectPath }: AIPanelProps) {
           const created = await createSession({
             projectPath,
             name: defaultSessionName(0),
-            mode,
+            mode: "Discussion",
           });
           next = [created];
         }
@@ -515,7 +514,7 @@ export default function AIPanel({ projectPath }: AIPanelProps) {
     const chapterIdForSession = currentChapterId;
 
     setLoadingSessions(true);
-    void createSession({ projectPath, name, mode, chapterId: chapterIdForSession })
+    void createSession({ projectPath, name, mode: "Discussion" as SessionMode, chapterId: chapterIdForSession })
       .then((created) => {
         setSessions((prev) => [created, ...prev]);
         selectSession(created.id);
@@ -579,7 +578,9 @@ export default function AIPanel({ projectPath }: AIPanelProps) {
     content: string,
     options?: { continuePhase?: ContinuePhase; sourceDraftMessageId?: string },
   ) => {
-    if (!currentSession || busy) return;
+    if (!currentSession || busy) {
+      return;
+    }
 
     const continuePhase = options?.continuePhase ?? inferContinuePhase(content);
     const allowWrite = continuePhase === "apply";
@@ -591,7 +592,7 @@ export default function AIPanel({ projectPath }: AIPanelProps) {
       return;
     }
 
-    if (mode === "Continue" && allowWrite && sourceDraftMessageId) {
+    if (currentSession.mode === "Continue" && allowWrite && sourceDraftMessageId) {
       setDismissedDraftIds((prev) =>
         prev.includes(sourceDraftMessageId) ? prev : [...prev, sourceDraftMessageId],
       );
@@ -663,7 +664,13 @@ export default function AIPanel({ projectPath }: AIPanelProps) {
             });
 
       // Inject worldbuilding context
-      const worldSummary = buildWorldSummary();
+      let worldSummary = "";
+      try {
+        worldSummary = buildWorldSummary();
+      } catch {
+        // Ignore worldbuilding errors to prevent crashes
+        console.warn("[AIPanel] Failed to build world summary:");
+      }
       const finalSystemPrompt = worldSummary
         ? `${systemPrompt}\n\n${worldSummary}`
         : systemPrompt;
@@ -671,7 +678,7 @@ export default function AIPanel({ projectPath }: AIPanelProps) {
       const { content: reply, toolCalls } = await aiChat({
         projectDir: projectPath,
         messages: messagesForAi,
-        mode,
+        mode: currentSession.mode,
         systemPrompt: finalSystemPrompt,
         chapterId: resolved?.chapterId ?? null,
         allowWrite,
@@ -931,7 +938,7 @@ export default function AIPanel({ projectPath }: AIPanelProps) {
 
       <ChatHistory
         messages={messagesInSession}
-        mode={mode}
+        mode={currentSession?.mode ?? "Discussion"}
         continueDraftId={actionableDraftId}
         onConfirmDraft={handleConfirmDraft}
         onRegenerateDraft={handleRegenerateDraft}

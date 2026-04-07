@@ -129,13 +129,25 @@ export default function MainLayout({
       void chapter.refreshChapters();
     };
 
+    // AI 追加内容后，重新加载当前章节
+    const onChapterAppended = (event: Event) => {
+      const { detail } = event as CustomEvent<{ projectPath: string; chapterId: string }>;
+      if (!detail || detail.projectPath !== projectPath) return;
+      // 如果是当前章节，重新加载内容
+      if (detail.chapterId === chapter.currentChapterId) {
+        void chapter.loadChapterContent(detail.chapterId);
+      }
+    };
+
     window.addEventListener("creatorai:openSettings", onOpenSettings);
     window.addEventListener("creatorai:chaptersChanged", onChaptersChanged);
+    window.addEventListener("creatorai:chapterAppended", onChapterAppended);
     return () => {
       window.removeEventListener("creatorai:openSettings", onOpenSettings);
       window.removeEventListener("creatorai:chaptersChanged", onChaptersChanged);
+      window.removeEventListener("creatorai:chapterAppended", onChapterAppended);
     };
-  }, [projectPath, chapter]);
+  }, [projectPath, chapter, chapter.currentChapterId]);
 
   // 是否为全屏模式（世界观编辑器等）
   const isFullscreenMode = sidebarView === "worldbuilding";

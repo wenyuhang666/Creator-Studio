@@ -1002,6 +1002,10 @@ pub fn run_chat_with_events(
                     .as_array()
                     .ok_or("Invalid tool_call format")?;
 
+                // 过滤掉在草稿阶段不允许的写入工具
+                let write_tools = ["write", "append", "save_summary"];
+                let should_block_write_tools = matches!(request.mode, SessionMode::Continue) && !request.allow_write;
+                
                 let mut results = Vec::new();
 
                 for call in calls {
@@ -1015,6 +1019,18 @@ pub fn run_chat_with_events(
                     let name = call["name"].as_str().unwrap_or("").to_string();
                     let args = call["args"].clone();
                     let id = call["id"].as_str().unwrap_or("").to_string();
+
+                    // 检查是否是需要阻止的写入工具
+                    let is_write_tool = write_tools.iter().any(|&w| w == name);
+                    if should_block_write_tools && is_write_tool {
+                        // 不返回错误结果给 AI，让它继续运行
+                        // 这样前端不会显示错误信息
+                        results.push(json!({
+                            "id": id,
+                            "result": "[跳过] 草稿阶段不执行写入操作。"
+                        }));
+                        continue;
+                    }
 
                     if let Some(handler) = &events {
                         (handler.on_tool_call_start)(ToolCallStartEvent {

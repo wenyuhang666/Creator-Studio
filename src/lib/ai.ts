@@ -164,10 +164,17 @@ export async function aiChat(params: {
     throw new Error("请先在设置中添加 Provider，并设为当前，然后配置模型参数。");
   }
 
+  // 在草稿阶段（Continue 模式且不允许写入），阻止 AI 调用写入工具
+  let effectiveSystemPrompt = params.systemPrompt ?? systemPromptForMode(params.mode, params.projectDir);
+  if (params.mode === "Continue" && !params.allowWrite) {
+    effectiveSystemPrompt = `【草稿预览模式】请只生成续写内容预览，不要调用 write/append/save_summary 工具。
+\n` + effectiveSystemPrompt;
+  }
+
   const result = (await invoke("ai_chat", {
     provider: active.provider,
     parameters: active.parameters,
-    systemPrompt: params.systemPrompt ?? systemPromptForMode(params.mode, params.projectDir),
+    systemPrompt: effectiveSystemPrompt,
     messages: params.messages,
     projectDir: params.projectDir,
     mode: params.mode,
