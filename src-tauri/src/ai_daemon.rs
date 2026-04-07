@@ -237,7 +237,12 @@ impl AIDaemon {
             }
         };
 
-        self.start_inner(&path)
+        let result = self.start_inner(&path);
+        if result.is_err() {
+            // Clear cached path so next call re-discovers instead of reusing a stale path
+            *self.engine_path.lock().unwrap() = None;
+        }
+        result
     }
 
     /// Reset the circuit breaker (user-initiated retry).
